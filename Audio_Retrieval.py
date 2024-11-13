@@ -1,4 +1,5 @@
 import os
+import pandas as pd
 from pytube import Search
 from pydub import AudioSegment
 from yt_dlp import YoutubeDL
@@ -41,9 +42,18 @@ def extract_audio_of_song(youtube_url, title, path):
 
     return 
 
-def extract_audios(titles=["Gangnam Style", "Smells Like Teen Spirit", "All Summer Long", "London Calling"]):
-    for current_song_title in titles:
-        found_url = find_song_url(current_song_title)
+# TO DO: Add Duration of Video Check (if too long, select next result) + Add Delete Wav File
+
+def extract_audios(df):
+    for artist, song_title in zip(df['Artist'], df['Song Title']):
+        print(f"Current Artist: {artist}, Current Song: {song_title}")
+
+        found_url = find_song_url(artist + " - " + song_title)
+        print(f"Query: {artist + ' - ' + song_title}, Found URL: {found_url}")
+
         extract_audio_of_song(youtube_url=found_url, 
-                              title=current_song_title, 
+                              title=song_title.replace('/', ' ') + ' by ' + artist.replace('/', ' '), 
                               path='./Retrieved_Audio/')
+
+songs_df = pd.read_csv("Preprocessed and Labeled Datasets\Labeled_Songs_per_Top_200_Billboard.csv")
+extract_audios(songs_df)
