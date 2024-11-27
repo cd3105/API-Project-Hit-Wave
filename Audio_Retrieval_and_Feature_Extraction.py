@@ -3,6 +3,7 @@ import pandas as pd
 from pytube import Search
 from pydub import AudioSegment
 from yt_dlp import YoutubeDL
+from FeatureExtraction import Features
 
 def find_song_url(query):
     yt_search = Search(query)
@@ -38,9 +39,11 @@ def extract_audio_of_song(youtube_url, title, path):
     audio.export(wav_file, format='wav')
 
     # Optional: Remove the MP3 file
-    os.remove(mp3_file)
+    # os.remove(mp3_file)
 
     return wav_file
+
+Features_df = pd.DataFrame(columns=range(21))
 
 def extract_audios(df):
     for artist, song_title in zip(df['Artist'], df['Song Title']):
@@ -54,8 +57,11 @@ def extract_audios(df):
                                            path='./Retrieved_Audio/')
         
         # Add code to extract audio features
-        
-        os.remove(audio_file)
+        new_row = Features(audio_file).get_all()
+
+        Features_df.loc[len(Features_df)] = new_row
+
+        return Features_df
 
 songs_df = pd.read_csv("Preprocessed and Labeled Datasets\Labeled_Songs_per_Top_100_Billboard.csv")
-extract_audios(songs_df)
+extract_audios(songs_df[:1])
