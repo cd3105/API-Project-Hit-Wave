@@ -2,6 +2,7 @@ import os
 import pandas as pd
 from pytube import Search
 from pydub import AudioSegment
+from pydub.exceptions import CouldntDecodeError
 from yt_dlp import YoutubeDL
 from yt_dlp.utils import DownloadError
 from Feature_Extraction import Features
@@ -60,7 +61,13 @@ def extract_audios(s_idx, df, feat_df):
         if artist == "Halloween" and song_title == "HALLOWEEN WIND": # Handles specific query as it only found extremely long videos that did not match the Spotify track
             found_videos = find_youtube_videos_of_song("Howling Wind 2 - Scary Halloween Sound Effects - Halloween Sound Effects")
         elif artist == "Death" and song_title == "SUICIDE MACHINE": # Handles specific query as it let to no search results due to Suicide Prevention blocking it
-            found_videos = find_youtube_videos_of_song("Death SUICIDE MACHINE Lyrics")
+            found_videos = find_youtube_videos_of_song("Death - SUICIDE MACHINE Lyrics")
+        elif artist == "Snoop Dogg" and song_title == "DOGGYLAND": # Handles specific query as it results in a live stream
+            found_videos = find_youtube_videos_of_song("Snoop Doggy Dogg - Doggyland King of Rap")
+        elif artist == "Bing Crosby" and song_title == "CHRISTMAS IS": # Handles specific query as it results in a live stream
+            found_videos = find_youtube_videos_of_song("bing crosby christmas is a comin")
+        elif artist == "Nirvana" and song_title == "I HATE MYSELF AND WANT TO DIE": # Handles specific query as it let to no search results due to Suicide Prevention blocking it
+            found_videos = find_youtube_videos_of_song("Nirvana - I HATE MYSELF AND WANT TO DIE Lyrics")
         else:
             found_videos = find_youtube_videos_of_song(artist + " - " + song_title)
 
@@ -72,15 +79,19 @@ def extract_audios(s_idx, df, feat_df):
                                                                    title=song_title.replace('/', ' ') + ' by ' + artist.replace('/', ' '), 
                                                                    path='./Retrieved_Audio/')
 
-            if audio_file_mp3 != "ERROR":         
-                if MP3(audio_file_mp3).info.length < 1200:
-                    audio = AudioSegment.from_mp3(audio_file_mp3)
-                    audio.export(audio_file_wav, format='wav')
-                    os.remove(audio_file_mp3)
+            try:
+                if audio_file_mp3 != "ERROR":         
+                    if MP3(audio_file_mp3).info.length < 1200:
+                        audio = AudioSegment.from_mp3(audio_file_mp3)
+                        audio.export(audio_file_wav, format='wav')
+                        os.remove(audio_file_mp3)
 
-                    break
-            
+                        break
+                
+                    os.remove(audio_file_mp3)
+            except CouldntDecodeError:
                 os.remove(audio_file_mp3)
+                continue
 
         feat_df.loc[i] = {"Video Title of Audio": title_video} | Features(audio_file_wav).get_all()
         feat_df.to_csv("Audio Features Datasets\Audio_Features_Dataset.csv", index=False)
