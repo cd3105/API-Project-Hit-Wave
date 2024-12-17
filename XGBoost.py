@@ -8,7 +8,7 @@ from imblearn.over_sampling import SMOTE
 from imblearn.under_sampling import RandomUnderSampler
 from sklearn.utils.class_weight import compute_sample_weight
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import GridSearchCV, RandomizedSearchCV, StratifiedShuffleSplit, train_test_split, cross_val_score
+from sklearn.model_selection import GridSearchCV, RandomizedSearchCV, StratifiedShuffleSplit, StratifiedKFold, train_test_split, cross_val_score
 from sklearn.preprocessing import StandardScaler
 from sklearn.feature_selection import VarianceThreshold
 from sklearn.metrics import (
@@ -109,11 +109,13 @@ def data_preparation_k_fold(df, test_size=0.2, n_folds=5, random_state=42):
     X_test_x = []
     y_test_x = []
 
-    sss = StratifiedShuffleSplit(n_splits=n_folds, 
-                                 test_size=test_size, 
-                                 random_state=random_state)
+    # sss = StratifiedShuffleSplit(n_splits=n_folds, 
+    #                              test_size=test_size, 
+    #                              random_state=random_state)
+    
+    skf = StratifiedKFold(n_splits=n_folds)
 
-    for (train_index, test_index) in sss.split(X, y):
+    for (train_index, test_index) in skf.split(X, y):
         current_X_train = X.loc[train_index].reset_index(drop=True)
         current_y_train = y.loc[train_index].reset_index(drop=True)
         current_X_test = X.loc[test_index].reset_index(drop=True)
@@ -150,20 +152,24 @@ def identify_low_variance_features(X_train, categorical_cols, threshold=0.5):
 
 
 def identify_top_tree_based_features(X_train, y_train, n_features):
-    rf = RandomForestClassifier(random_state=42, 
-                                criterion='gini',
-                                class_weight='balanced',
-                                max_features='sqrt',
-                                min_samples_leaf=9,
-                                min_samples_split=4,
-                                max_depth=10, 
-                                n_estimators=200,
-                                bootstrap=True)
-    rf.fit(X_train, y_train)
+    xgb = XGBClassifier(random_state=42, 
+                        eval_metric='logloss', 
+                        colsample_bytree=0.9295494044854866, 
+                        learning_rate=0.05942205773843994, 
+                        max_depth=11, 
+                        min_child_weight=5,
+                        n_estimators=1190, 
+                        subsample=0.631845978626705,
+                        gamma=0.5283302939558705,
+                        reg_lambda=15.349380699483927, 
+                        reg_alpha=14.46196843183752,
+                        n_jobs=-1)
+    xgb.fit(X_train, 
+           y_train)
 
     feature_importance = pd.DataFrame({
         'feature': X_train.columns,
-        'importance': rf.feature_importances_
+        'importance': xgb.feature_importances_
     }).sort_values('importance', ascending=False)
 
     return feature_importance.head(n_features)['feature'].tolist()
@@ -250,8 +256,10 @@ def objective(trial, X_train, y_train, sample_class_weights, random_state=42):
     params = {
         'random_state': random_state, 
         'objective': 'binary:logistic', 
-        'eval_metric': 'logloss',       
-        'max_depth': trial.suggest_int('max_depth', 2, 20), 
+        'eval_metric': 'logloss',    
+        'n_jobs': -1,   
+        'max_depth': trial.suggest_int('max_depth', 2, 12), 
+        'min_child_weight': trial.suggest_int('min_child_weight', 1, 10),
         'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.5), 
         'n_estimators': trial.suggest_int('n_estimators', 100, 2000), 
         'subsample': trial.suggest_float('subsample', 0.6, 1.0), 
@@ -265,7 +273,8 @@ def objective(trial, X_train, y_train, sample_class_weights, random_state=42):
     scores = cross_val_score(model, 
                              X_train, 
                              y_train, 
-                             cv=5, 
+                             cv=3, 
+                             scoring='balanced_accuracy', # 'f1', 'f1_weighted', 'accuracy', 'balanced_accuracy'
                              fit_params={"sample_weight": sample_class_weights})
     
     return np.mean(scores)
@@ -273,7 +282,7 @@ def objective(trial, X_train, y_train, sample_class_weights, random_state=42):
 def perform_optuna_search(X_train, y_train, sample_class_weights=None, random_state=42):
     study = optuna.create_study(direction='maximize') 
     study.optimize(lambda trial: objective(trial, X_train, y_train, sample_class_weights, random_state), 
-                   n_trials=100)
+                   n_trials=50)
     
     print(f"Best Optuna Trial: {study.best_trial}")
     print(f"Best Optuna Parameters: {study.best_params}")
@@ -321,15 +330,6 @@ def main():
     X_train = X_train.drop(columns=low_variance_features)
     X_test = X_test.drop(columns=low_variance_features)
 
-    # Train Random Forest Model with Feature Importance and Retrieve Top Features
-
-    # top_tree_based_features = identify_top_tree_based_features(X_train, 
-    #                                                            y_train, 
-    #                                                            30)
-
-    # X_train = X_train[top_tree_based_features]
-    # X_test = X_test[top_tree_based_features]
-
     oversampler = SMOTE(random_state=args.random_state, 
                         sampling_strategy=1)
     undersampler = RandomUnderSampler(random_state=args.random_state, 
@@ -370,17 +370,31 @@ def main():
 
     # Train model
 
-    xgb = XGBClassifier(random_state=args.random_state, 
+    # xgb = XGBClassifier(random_state=args.random_state, # After search on F1 with Oversampling 
+    #                     eval_metric='logloss', 
+    #                     colsample_bytree=0.735947043008583, 
+    #                     learning_rate=0.14668211285518798, 
+    #                     max_depth=9, 
+    #                     min_child_weight=7,
+    #                     n_estimators=1135, 
+    #                     subsample=0.8131090921418384,
+    #                     gamma=0.31199353789149753,
+    #                     reg_lambda=11.891452528606097, 
+    #                     reg_alpha=2.199357732253043,
+    #                     n_jobs=-1)
+    
+    xgb = XGBClassifier(random_state=args.random_state, # After search on Balanced Accuracy with Oversampling 
                         eval_metric='logloss', 
-                        colsample_bytree=0.9761857073921442, 
-                        learning_rate=0.07479248579024858, 
-                        max_depth=7, 
-                        min_child_weight=1, 
-                        n_estimators=922, 
-                        subsample=0.8680311312338255,
-                        gamma=0.2846283982418375,
-                        reg_lambda=3.139575395300878, 
-                        reg_alpha=5.135198926303964,
+                        colsample_bytree=0.9295494044854866, 
+                        learning_rate=0.001942205773843994, 
+                        max_depth=8, 
+                        min_child_weight=5,
+                        n_estimators=3190, 
+                        subsample=0.631845978626705,
+                        gamma=0.7283302939558705,
+                        reg_lambda=15.349380699483927, 
+                        reg_alpha=14.46196843183752,
+                        n_jobs=-1,
                         early_stopping_rounds=10)
     
     xgb.fit(X_train, 
@@ -402,6 +416,7 @@ def main():
 
     if args.cross_validation:
         X_train_x, X_test_x, y_train_x, y_test_x = data_preparation_k_fold(data_df, 
+                                                                           n_folds=10,
                                                                            test_size=float(args.subset_ratios[1]), 
                                                                            random_state=args.random_state)
         
@@ -432,15 +447,6 @@ def main():
             current_X_train = current_X_train.drop(columns=current_low_variance_features)
             current_X_test = current_X_test.drop(columns=current_low_variance_features)
 
-            # Train Random Forest Model with Feature Importance and Retrieve Top Features
-
-            current_top_tree_based_features = identify_top_tree_based_features(current_X_train,
-                                                                               current_y_train, 
-                                                                               30)
-
-            current_X_train = current_X_train[current_top_tree_based_features]
-            current_X_test = current_X_test[current_top_tree_based_features]
-
             current_oversampler = SMOTE(random_state=args.random_state, 
                                         sampling_strategy=1)
             current_undersampler = RandomUnderSampler(random_state=args.random_state,
@@ -459,19 +465,33 @@ def main():
 
             # Train model
 
-            xgb = XGBClassifier(random_state=args.random_state, 
-                                eval_metric='logloss', 
-                                colsample_bytree=0.9761857073921442, 
-                                learning_rate=0.07479248579024858, 
-                                max_depth=7, 
-                                min_child_weight=1, 
-                                n_estimators=922, 
-                                subsample=0.8680311312338255,
-                                gamma=0.2846283982418375,
-                                reg_lambda=3.139575395300878, 
-                                reg_alpha=5.135198926303964,
-                                early_stopping_rounds=10)
+            # xgb = XGBClassifier(random_state=args.random_state, # After search on F1 with Oversampling 
+            #                     eval_metric='logloss', 
+            #                     colsample_bytree=0.735947043008583, 
+            #                     learning_rate=0.14668211285518798, 
+            #                     max_depth=9, 
+            #                     min_child_weight=7,
+            #                     n_estimators=1135, 
+            #                     subsample=0.8131090921418384,
+            #                     gamma=0.31199353789149753,
+            #                     reg_lambda=11.891452528606097, 
+            #                     reg_alpha=2.199357732253043,
+            #                     n_jobs=-1)
             
+            xgb = XGBClassifier(random_state=args.random_state, # After search on Balanced Accuracy with Oversampling 
+                                eval_metric='logloss', 
+                                colsample_bytree=0.9295494044854866, 
+                                learning_rate=0.001942205773843994, 
+                                max_depth=8, 
+                                min_child_weight=5,
+                                n_estimators=3190, 
+                                subsample=0.631845978626705,
+                                gamma=0.5283302939558705,
+                                reg_lambda=15.349380699483927, 
+                                reg_alpha=14.46196843183752,
+                                n_jobs=-1,
+                                early_stopping_rounds=10)
+
             xgb.fit(current_X_train, 
                     current_y_train, 
                     sample_weight=current_sample_class_weights, 
@@ -487,15 +507,8 @@ def main():
             cross_validation_precisions.append(precision_score(current_y_test, current_y_pred_test))
             cross_validation_recalls.append(recall_score(current_y_test, current_y_pred_test))
             cross_validation_f1_scores.append(f1_score(current_y_test, current_y_pred_test))
-
-            print(f"\nCross-Validation Evaluation of Fold {i}:\n")
-            print(f"- Accuracy on Training Set: {cross_validation_accuracies_train[i]}")
-            print(f"- Accuracy: {cross_validation_accuracies_test[i]}")
-            print(f"- Precision: {cross_validation_precisions[i]}")
-            print(f"- Recall: {cross_validation_recalls[i]}")
-            print(f"- F1 Score: {cross_validation_f1_scores[i]}\n\n")
         
-        print(f"\nCross-Validation Evaluation overall Folds:\n")
+        print(f"\nCross-Validation Evaluation over all {len(cross_validation_accuracies_test)} Folds:\n")
         print(f"- Mean Accuracy on Training Set: {np.array(cross_validation_accuracies_train).mean()}")
         print(f"- Mean Accuracy: {np.array(cross_validation_accuracies_test).mean()}")
         print(f"- Mean Precision: {np.array(cross_validation_precisions).mean()}")

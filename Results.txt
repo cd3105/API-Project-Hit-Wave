@@ -1,0 +1,88 @@
+LR (Oversampling + 0.8/0.2 + Hyperparameter Search on Balanced Accuracy):
+
+Cross-Validation Evaluation over all 10 Folds:
+
+- Mean Accuracy on Training Set: 0.7043657279438605
+- Mean Accuracy: 0.6702215546376268
+- Mean Precision: 0.5601320166491226
+- Mean Recall: 0.521817151028537
+- Mean F1 Score: 0.5402276125337373
+
+LR (Oversampling + 0.8/0.2 + Hyperparameter Search on F1):
+
+Cross-Validation Evaluation over all 10 Folds:
+
+- Mean Accuracy on Training Set: 0.7033685391689257
+- Mean Accuracy: 0.6681186631618475
+- Mean Precision: 0.5545785686484785
+- Mean Recall: 0.5409305087372325
+- Mean F1 Score: 0.5475856321476777
+
+LR (Oversampling + 0.8/0.2 + Hyperparameter Search on F1 Weighted):
+
+Cross-Validation Evaluation over all 10 Folds:
+
+- Mean Accuracy on Training Set: 0.7043607490766672
+- Mean Accuracy: 0.6695644010514458
+- Mean Precision: 0.5579939153309635
+- Mean Recall: 0.530565072653002
+- Mean F1 Score: 0.5438773355184703
+
+
+Linear SVC
+
+Linear SVC (Oversampling + 0.8/0.2 + Hyperparameter Search on Balanced Accuracy + Filtering of Highly Correlated Features and Features with Low Variance):
+
+Cross-Validation Evaluation over all 10 Folds:
+
+- Mean Accuracy on Training Set: 0.6957975252709239
+- Mean Accuracy: 0.6632745024408562
+- Mean Precision: 0.5504958095840774
+- Mean Recall: 0.5089750533562664
+- Mean F1 Score: 0.5288834821582893
+
+Linear SVC (Oversampling + 0.8/0.2 + Hyperparameter Search on F1 + Filtering of Highly Correlated Features and Features with Low Variance):
+
+Cross-Validation Evaluation over all 10 Folds:
+
+- Mean Accuracy on Training Set: 0.6958058222082839
+- Mean Accuracy: 0.6630867442733759
+- Mean Precision: 0.5500648576086008
+- Mean Recall: 0.5101883490269545
+- Mean F1 Score: 0.5293405486234283
+
+Linear SVC (Oversampling + 0.8/0.2 + Hyperparameter Search on F1 Weighted + Filtering of Highly Correlated Features and Features with Low Variance):
+
+Cross-Validation Evaluation over all 10 Folds:
+
+- Mean Accuracy on Training Set: 0.6963118945321704
+- Mean Accuracy: 0.6647765677806985
+- Mean Precision: 0.5519173363323666
+- Mean Recall: 0.5174187432521521
+- Mean F1 Score: 0.5340721451455737
+
+
+XGBoost
+
+XGBoost (Oversampling + 0.8/0.2 + Hyperparameter Search on Balanced Accuracy + Filtering of Highly Correlated Features and Features with Low Variance):
+
+Cross-Validation Evaluation overall Folds:
+
+- Mean Accuracy on Training Set: 0.7936452957124829
+- Mean Accuracy: 0.701295531355614
+- Mean Precision: 0.5955128799516928
+- Mean Recall: 0.6102036177983099
+- Mean F1 Score: 0.6027376139807485
+
+
+Random Forest
+
+Cross-Validation Evaluation over all 10 Folds:
+
+XGBoost (Oversampling + 0.8/0.2 + Hyperparameter Search on F1 + Filtering of Highly Correlated Features and Features with Low Variance):
+
+- Mean Accuracy on Training Set: 0.7669928446038753
+- Mean Accuracy: 0.6586744273375893
+- Mean Precision: 0.5303584321385472
+- Mean Recall: 0.7058205511000366
+- Mean F1 Score: 0.6056219023416396

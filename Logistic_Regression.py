@@ -6,10 +6,9 @@ import optuna
 from sklearn.linear_model import LogisticRegression
 from imblearn.over_sampling import SMOTE
 from imblearn.under_sampling import RandomUnderSampler
-from sklearn.utils.class_weight import compute_sample_weight
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import GridSearchCV, RandomizedSearchCV, StratifiedShuffleSplit, train_test_split, cross_val_score
-from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import GridSearchCV, RandomizedSearchCV, StratifiedShuffleSplit, StratifiedKFold, train_test_split, cross_val_score
+from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler
 from sklearn.feature_selection import VarianceThreshold
 from sklearn.metrics import (
     accuracy_score,
@@ -109,11 +108,13 @@ def data_preparation_k_fold(df, test_size=0.2, n_folds=5, random_state=42):
     X_test_x = []
     y_test_x = []
 
-    sss = StratifiedShuffleSplit(n_splits=n_folds, 
-                                 test_size=test_size, 
-                                 random_state=random_state)
+    # sss = StratifiedKFold(n_splits=n_folds, 
+    #                       test_size=test_size, 
+    #                       random_state=random_state)
 
-    for (train_index, test_index) in sss.split(X, y):
+    skf = StratifiedKFold(n_splits=n_folds)
+
+    for (train_index, test_index) in skf.split(X, y):
         current_X_train = X.loc[train_index].reset_index(drop=True)
         current_y_train = y.loc[train_index].reset_index(drop=True)
         current_X_test = X.loc[test_index].reset_index(drop=True)
@@ -184,7 +185,7 @@ def perform_grid_search(X_train, y_train, X_test, y_test, random_state=42):
     grid_search = GridSearchCV(
         estimator=model,
         param_grid=param_grid,
-        scoring='balanced_accuracy',
+        scoring='balanced_accuracy', # f1_weighted , balanced_accuracy
         cv=3,
         verbose=1,
         n_jobs=multiprocessing.cpu_count()-1
@@ -216,7 +217,7 @@ def perform_randomized_search(X_train, y_train, X_test, y_test, random_state=42)
     randomized_search = RandomizedSearchCV(
         estimator=model,
         param_distributions=param_grid,
-        scoring='balanced_accuracy',
+        scoring='f1', # f1_weighted , balanced_accuracy
         n_iter=100,
         cv=5,
         verbose=1,
@@ -249,14 +250,15 @@ def objective(trial, X_train, y_train, random_state=42):
     scores = cross_val_score(model, 
                              X_train, 
                              y_train, 
-                             cv=3)
+                             cv=3,
+                             scoring='f1') # f1, f1_weighted , balanced_accuracy
     
     return np.mean(scores)
 
 def perform_optuna_search(X_train, y_train, random_state=42):
     study = optuna.create_study(direction='maximize') 
     study.optimize(lambda trial: objective(trial, X_train, y_train, random_state), 
-                   n_trials=100)
+                   n_trials=50)
     
     print(f"Best Optuna Trial: {study.best_trial}")
     print(f"Best Optuna Parameters: {study.best_params}")
@@ -288,30 +290,6 @@ def main():
     X_train, X_test, y_train, y_test, categorical_cols = data_preparation(data_df, 
                                                                           test_size=float(args.subset_ratios[1]), 
                                                                           random_state=args.random_state)
-
-    # Remove Features with a Very High Correlation
-
-    highly_correlated_features = identify_highly_correlated_features(X_train)
-
-    X_train = X_train.drop(columns=highly_correlated_features)
-    X_test = X_test.drop(columns=highly_correlated_features)
-
-    # Remove Feature with a Very Low Variance
-
-    low_variance_features = identify_low_variance_features(X_train, 
-                                                           categorical_cols)
-
-    X_train = X_train.drop(columns=low_variance_features)
-    X_test = X_test.drop(columns=low_variance_features)
-
-    # Train Random Forest Model with Feature Importance and Retrieve Top Features
-
-    # top_tree_based_features = identify_top_tree_based_features(X_train, 
-    #                                                            y_train, 
-    #                                                            10)
-
-    # X_train = X_train[top_tree_based_features]
-    # X_test = X_test[top_tree_based_features]
 
     oversampler = SMOTE(random_state=args.random_state, 
                         sampling_strategy=1)
@@ -347,13 +325,29 @@ def main():
 
     # Train model
 
-    lr = LogisticRegression(random_state=args.random_state,
+    # lr = LogisticRegression(random_state=args.random_state, # After search on Balanced Accuracy
+    #                         class_weight='balanced',
+    #                         solver='lbfgs',
+    #                         penalty= 'l2',
+    #                         C=54.73925133294406,
+    #                         fit_intercept=True,
+    #                         max_iter=372)
+
+    # lr = LogisticRegression(random_state=args.random_state, # After search on F1 Weighted
+    #                         class_weight='balanced',
+    #                         solver='lbfgs',
+    #                         penalty= 'l2',
+    #                         C=0.20235637320086464,
+    #                         fit_intercept=True,
+    #                         max_iter=439)
+    
+    lr = LogisticRegression(random_state=args.random_state, # After search on F1
                             class_weight='balanced',
-                            solver='lbfgs',
+                            solver='sag',
                             penalty= 'l2',
-                            C=36.20452248064382,
+                            C=42.93180795553438,
                             fit_intercept=True,
-                            max_iter=969)
+                            max_iter=1728)
     
     lr.fit(X_train, 
             y_train)
@@ -371,6 +365,7 @@ def main():
 
     if args.cross_validation:
         X_train_x, X_test_x, y_train_x, y_test_x = data_preparation_k_fold(data_df, 
+                                                                           n_folds=10,
                                                                            test_size=float(args.subset_ratios[1]), 
                                                                            random_state=args.random_state)
         
@@ -385,30 +380,6 @@ def main():
             current_X_test = X_test_x[i]
             current_y_train = y_train_x[i]
             current_y_test = y_test_x[i]
-
-            # Remove Features with a Very High Correlation
-
-            current_highly_correlated_features = identify_highly_correlated_features(current_X_train)
-
-            current_X_train = current_X_train.drop(columns=current_highly_correlated_features)
-            current_X_test = current_X_test.drop(columns=current_highly_correlated_features)
-
-            # Remove Feature with a Very Low Variance
-
-            current_low_variance_features = identify_low_variance_features(current_X_train, 
-                                                                           categorical_cols)
-
-            current_X_train = current_X_train.drop(columns=current_low_variance_features)
-            current_X_test = current_X_test.drop(columns=current_low_variance_features)
-
-            # Train Random Forest Model with Feature Importance and Retrieve Top Features
-
-            # current_top_tree_based_features = identify_top_tree_based_features(current_X_train,
-            #                                                                    current_y_train, 
-            #                                                                    30)
-
-            # current_X_train = current_X_train[current_top_tree_based_features]
-            # current_X_test = current_X_test[current_top_tree_based_features]
 
             current_oversampler = SMOTE(random_state=args.random_state, 
                                         sampling_strategy=1)
@@ -425,13 +396,29 @@ def main():
 
             # Train model
 
-            lr = LogisticRegression(random_state=args.random_state,
+            # lr = LogisticRegression(random_state=args.random_state, # After search on Balanced Accuracy
+            #                 class_weight='balanced',
+            #                 solver='lbfgs',
+            #                 penalty= 'l2',
+            #                 C=54.73925133294406,
+            #                 fit_intercept=True,
+            #                 max_iter=372)
+
+            # lr = LogisticRegression(random_state=args.random_state, # After search on F1 Weighted
+            #                         class_weight='balanced',
+            #                         solver='lbfgs',
+            #                         penalty= 'l2',
+            #                         C=0.20235637320086464,
+            #                         fit_intercept=True,
+            #                         max_iter=439)
+            
+            lr = LogisticRegression(random_state=args.random_state, # After search on F1
                                     class_weight='balanced',
-                                    solver='lbfgs',
+                                    solver='sag',
                                     penalty= 'l2',
-                                    C=36.20452248064382,
+                                    C=42.93180795553438,
                                     fit_intercept=True,
-                                    max_iter=969)
+                                    max_iter=1728)
             
             lr.fit(current_X_train, 
                    current_y_train)
@@ -446,14 +433,8 @@ def main():
             cross_validation_recalls.append(recall_score(current_y_test, current_y_pred_test))
             cross_validation_f1_scores.append(f1_score(current_y_test, current_y_pred_test))
 
-            print(f"\nCross-Validation Evaluation of Fold {i}:\n")
-            print(f"- Accuracy on Training Set: {cross_validation_accuracies_train[i]}")
-            print(f"- Accuracy: {cross_validation_accuracies_test[i]}")
-            print(f"- Precision: {cross_validation_precisions[i]}")
-            print(f"- Recall: {cross_validation_recalls[i]}")
-            print(f"- F1 Score: {cross_validation_f1_scores[i]}\n\n")
         
-        print(f"\nCross-Validation Evaluation overall Folds:\n")
+        print(f"\nCross-Validation Evaluation over all {len(cross_validation_accuracies_test)} Folds:\n")
         print(f"- Mean Accuracy on Training Set: {np.array(cross_validation_accuracies_train).mean()}")
         print(f"- Mean Accuracy: {np.array(cross_validation_accuracies_test).mean()}")
         print(f"- Mean Precision: {np.array(cross_validation_precisions).mean()}")

@@ -3,7 +3,7 @@ import numpy as np
 import argparse
 import multiprocessing
 import optuna
-from XGBoost import XGBClassifier
+from sklearn.svm import LinearSVC
 from imblearn.over_sampling import SMOTE
 from imblearn.under_sampling import RandomUnderSampler
 from sklearn.utils.class_weight import compute_sample_weight
@@ -11,6 +11,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import GridSearchCV, RandomizedSearchCV, StratifiedShuffleSplit, StratifiedKFold, train_test_split, cross_val_score
 from sklearn.preprocessing import StandardScaler
 from sklearn.feature_selection import VarianceThreshold
+from sklearn.decomposition import PCA
 from sklearn.metrics import (
     accuracy_score,
     precision_score,
@@ -152,74 +153,68 @@ def identify_low_variance_features(X_train, categorical_cols, threshold=0.5):
 
 
 def identify_top_tree_based_features(X_train, y_train, n_features):
-    xgb = XGBClassifier(random_state=42, 
-                        eval_metric='logloss', 
-                        colsample_bytree=0.9295494044854866, 
-                        learning_rate=0.05942205773843994, 
-                        max_depth=11, 
-                        min_child_weight=5,
-                        n_estimators=1190, 
-                        subsample=0.631845978626705,
-                        gamma=0.5283302939558705,
-                        reg_lambda=15.349380699483927, 
-                        reg_alpha=14.46196843183752,
-                        n_jobs=-1)
-    xgb.fit(X_train, y_train)
+    rf = RandomForestClassifier(random_state=42, 
+                                criterion='gini',
+                                class_weight='balanced',
+                                max_features='sqrt',
+                                min_samples_leaf=9,
+                                min_samples_split=4,
+                                max_depth=10, 
+                                n_estimators=200,
+                                bootstrap=True)
+    rf.fit(X_train, y_train)
 
     feature_importance = pd.DataFrame({
         'feature': X_train.columns,
-        'importance': xgb.feature_importances_
+        'importance': rf.feature_importances_
     }).sort_values('importance', ascending=False)
 
     return feature_importance.head(n_features)['feature'].tolist()
 
 
-def perform_grid_search(X_train, y_train, X_test, y_test, sample_class_weights=None, random_state=42):
+def perform_grid_search(X_train, y_train, X_test, y_test, random_state=42):
     param_grid = {
-        'n_estimators': [100, 300, 500],
-        'max_depth': [None, 10, 20, 50],
-        'min_samples_split': [2, 5, 10],
-        'min_samples_leaf': [1, 5, 10],
-        'max_features': [None, 'sqrt', 'log2'],
-        'bootstrap': [False, True]
+        'C': [0.1, 1, 10],
+        'penalty': ['l1', 'l2'],
+        'max_iter': [1000, 2500, 5000],
+        'tol': [1e-4, 1e-3, 1e-2],
+        'loss': ['hinge', 'squared_hinge']
     }
     
-    model = RandomForestClassifier(random_state=random_state, 
-                                   criterion='log_loss')
+    model = LinearSVC(random_state=random_state,
+                      class_weight='balanced')
 
     grid_search = GridSearchCV(
         estimator=model,
         param_grid=param_grid,
         scoring='balanced_accuracy',
         cv=3,
-        verbose=1,
+        verbose=4,
         n_jobs=multiprocessing.cpu_count()-1
     )
 
     grid_search.fit(X_train, 
-                    y_train, 
-                    sample_weight=sample_class_weights)    
-    best_rf = grid_search.best_estimator_
+                    y_train)    
+    best_svm = grid_search.best_estimator_
 
-    y_pred_train = best_rf.predict(X_train)
-    y_pred_test = best_rf.predict(X_test)
+    y_pred_train = best_svm.predict(X_train)
+    y_pred_test = best_svm.predict(X_test)
 
-    print(f"Best RF Accuracy on Training Set: {accuracy_score(y_train, y_pred_train)}\nBest RF Accuracy on CV: {grid_search.best_score_}\nBest RF Accuracy on Test Set: {accuracy_score(y_test, y_pred_test)}")
+    print(f"Best SVM Accuracy on Training Set: {accuracy_score(y_train, y_pred_train)}\nBest SVM Accuracy on CV: {grid_search.best_score_}\nBest SVM Accuracy on Test Set: {accuracy_score(y_test, y_pred_test)}")
     print(f"Best Parameters: {grid_search.best_params_}")
 
 
-def perform_randomized_search(X_train, y_train, X_test, y_test, sample_class_weights=None, random_state=42):
+def perform_randomized_search(X_train, y_train, X_test, y_test, random_state=42):
     param_grid = {
-        'n_estimators': np.arange(10, 100, 11),
-        'max_depth': [None, 10, 20, 30, 40, 50],
-        'min_samples_split': np.arange(2, 11),
-        'min_samples_leaf': np.arange(1, 11),
-        'max_features': [None, 'sqrt', 'log2'],
-        'bootstrap': [False, True]
+        'C': np.linspace(0.01, 10, 50),
+        'penalty': ['l1', 'l2'],
+        'max_iter': np.arrange(500, 2500, 100),
+        'tol': np.linspace(1e-3, 1e-1, 20),
+        'loss': ['hinge', 'squared_hinge']
     }
 
-    model = RandomForestClassifier(random_state=random_state, 
-                                   criterion='log_loss')
+    model = LinearSVC(random_state=random_state,
+                      class_weight='balanced')
 
     randomized_search = RandomizedSearchCV(
         estimator=model,
@@ -227,46 +222,48 @@ def perform_randomized_search(X_train, y_train, X_test, y_test, sample_class_wei
         scoring='balanced_accuracy',
         n_iter=100,
         cv=3,
-        verbose=1,
+        verbose=4,
         n_jobs=multiprocessing.cpu_count()-1
     )
 
     randomized_search.fit(X_train, 
-                          y_train, 
-                          sample_weight=sample_class_weights)
-    best_rf = randomized_search.best_estimator_
+                          y_train)
+    best_svm = randomized_search.best_estimator_
 
-    y_pred_train = best_rf.predict(X_train)
-    y_pred_test = best_rf.predict(X_test)
+    y_pred_train = best_svm.predict(X_train)
+    y_pred_test = best_svm.predict(X_test)
 
-    print(f"Best RF Accuracy on Training Set: {accuracy_score(y_train, y_pred_train)}\nBest RF Accuracy on CV: {randomized_search.best_score_}\nBest RF Accuracy on Test Set: {accuracy_score(y_test, y_pred_test)}")
+    print(f"Best SVM Accuracy on Training Set: {accuracy_score(y_train, y_pred_train)}\nBest SVM Accuracy on CV: {randomized_search.best_score_}\nBest SVM Accuracy on Test Set: {accuracy_score(y_test, y_pred_test)}")
     print(f"Best Parameters: {randomized_search.best_params_}")
 
-def objective(trial, X_train, y_train, sample_class_weights, random_state=42):
+def objective(trial, X_train, y_train, random_state=42):
     params = {
+        'class_weight':'balanced',
         'random_state': random_state,
-        'criterion': 'log_loss', 
-        'n_jobs':-1,
-        'n_estimators': trial.suggest_int('n_estimators', 10, 200),       
-        'max_depth': trial.suggest_int('max_depth', 2, 13),
-        'min_samples_split': trial.suggest_int('min_samples_split', 2, 11), 
-        'min_samples_leaf': trial.suggest_int('min_samples_leaf', 1, 11), 
-        'max_features': trial.suggest_categorical('max_features', [None, 'sqrt', 'log2']),
-        'bootstrap': trial.suggest_categorical('bootstrap', [False, True])
+        'C': trial.suggest_float('C', 1e-2, 1e2),
+        'penalty': trial.suggest_categorical('penalty', ['l1', 'l2']),
+        'max_iter': trial.suggest_int('max_iter', 500, 5000),
+        'tol': trial.suggest_float('tol', 1e-3, 1e-1),
+        'loss': trial.suggest_categorical('loss', ['hinge', 'squared_hinge']),
+        'dual': trial.suggest_categorical('dual', ['auto']),
     }
-    model = RandomForestClassifier(**params)
+    
+    if params['penalty'] == 'l1':
+        params['dual'] = False
+        params['loss'] = 'squared_hinge'
+
+    model = LinearSVC(**params)
     scores = cross_val_score(model, 
                              X_train, 
                              y_train, 
-                             cv=3, 
-                             scoring='f1', # recall
-                             fit_params={"sample_weight": sample_class_weights})
+                             cv=3,
+                             scoring='f1_weighted') # balanced_accuracy, f1, f1_weighted
     
     return np.mean(scores)
 
-def perform_optuna_search(X_train, y_train, sample_class_weights=None, random_state=42):
+def perform_optuna_search(X_train, y_train, random_state=42):
     study = optuna.create_study(direction='maximize') 
-    study.optimize(lambda trial: objective(trial, X_train, y_train, sample_class_weights, random_state), 
+    study.optimize(lambda trial: objective(trial, X_train, y_train, random_state), 
                    n_trials=50)
     
     print(f"Best Optuna Trial: {study.best_trial}")
@@ -279,12 +276,12 @@ def main():
     parser.add_argument('--cross_validation', action='store_true', default=False, required=False, help="Pass 'cross_validation' to run Cross Validation Evaluation")
     parser.add_argument('--subset_ratios', nargs='+', default=[0.8, 0.2], required=False, help="Choose a Train/Test Ratio. Default is 0.8/0.2")
     parser.add_argument('--random_state', type=int, default=42, required=False, help="Choose a Random State. Default is 42")
-    parser.add_argument('--hyper_parameter_search', default='none', choices=['grid_search', 'randomized_search', 'optuna', 'none'], required=False, help="Choose between 'grid_search', 'randomized_search', 'optuna', or 'none'. Default is 'none'.")
-    parser.add_argument('--class_imbalance_handling', default='only_weighting', choices=['oversample', 'undersample', 'resample', 'only_weighting'], required=False, help="Choose between 'oversample', or 'undersample', or 'only_weighting'. Default is 'only_weighting'.")
+    parser.add_argument('--hyper_parameter_search', default='none', choices=['grid_search', 'randomized_search', 'optuna', 'none'], required=False, help="Choose between 'grid_search', 'randomized_search', 'optuna', or 'none'")
+    parser.add_argument('--class_imbalance_handling', default='weighting', choices=['only_weighting', 'oversample', 'undersample', 'resample'], required=False, help="Choose between 'oversample', 'undersample', or 'only_weighting'")
     args = parser.parse_args()
 
     # Load in Data
-    
+
     data_df = pd.read_csv("Final Datasets after Further Filtering\Reordered_Preprocessed_Labeled_Songs_per_Hot_100_with_Spotify_Features_and_Audio_Features_53260.csv")
     
     if args.class_imbalance_handling == 'resample':
@@ -327,16 +324,14 @@ def main():
     if args.class_imbalance_handling == 'undersample':
         X_train, y_train = undersampler.fit_resample(X_train, 
                                                      y_train)
-    
-    sample_class_weights = compute_sample_weight(class_weight='balanced', 
-                                                 y=y_train)
+
+    # Reduce Dimensionality
 
     if args.hyper_parameter_search == 'grid_search':
         perform_grid_search(X_train, 
                             y_train, 
                             X_test, 
-                            y_test,
-                            sample_class_weights=sample_class_weights,
+                            y_test, 
                             random_state=args.random_state)
 
     if args.hyper_parameter_search == 'randomized_search':
@@ -344,43 +339,47 @@ def main():
                                   y_train, 
                                   X_test, 
                                   y_test, 
-                                  sample_class_weights=sample_class_weights,
                                   random_state=args.random_state)
 
     if args.hyper_parameter_search == 'optuna':
         perform_optuna_search(X_train, 
-                              y_train,
-                              sample_class_weights=sample_class_weights,
+                              y_train, 
                               random_state=args.random_state)
 
     # Train model
 
-    # rf = RandomForestClassifier(random_state=args.random_state, # After search on Balanced Accuracy
-    #                             criterion='gini',
-    #                             class_weight='balanced',
-    #                             max_features='sqrt',
-    #                             min_samples_leaf=2,
-    #                             min_samples_split=10,
-    #                             max_depth=10, 
-    #                             n_estimators=148, 
-    #                             bootstrap=False,
-    #                             n_jobs=-1)
-    
-    rf = RandomForestClassifier(random_state=args.random_state, # After search on F1
-                                criterion='gini',
-                                class_weight='balanced',
-                                max_features=None,
-                                min_samples_leaf=11,
-                                min_samples_split=4,
-                                max_depth=10, 
-                                n_estimators=163, 
-                                bootstrap=True,
-                                n_jobs=-1)
+    # svm = LinearSVC(random_state=args.random_state, # After search on Balanced Accuracy
+    #                 class_weight='balanced',
+    #                 C=50.43355830722913,
+    #                 penalty='l2',
+    #                 max_iter=4685,
+    #                 tol=0.008591948409902099,
+    #                 loss='squared_hinge',
+    #                 dual='auto')
 
-    rf.fit(X_train, 
+    # svm = LinearSVC(random_state=args.random_state, # After search on F1
+    #                 class_weight='balanced',
+    #                 C=42.38314585579962,
+    #                 penalty='l1',
+    #                 max_iter=1839,
+    #                 tol=0.0024833156356524784,
+    #                 loss='squared_hinge',
+    #                 dual='auto')
+    
+    svm = LinearSVC(random_state=args.random_state, # After search on F1 Weighted
+                    class_weight='balanced',
+                    C=0.15475743561983535,
+                    penalty='l2',
+                    max_iter=4682,
+                    tol=0.0010381137674891905,
+                    loss='hinge',
+                    dual='auto')
+                    
+    
+    svm.fit(X_train, 
             y_train)
-    y_pred_training = rf.predict(X_train)
-    y_pred_test = rf.predict(X_test)
+    y_pred_training = svm.predict(X_train)
+    y_pred_test = svm.predict(X_test)
 
     # Evaluation
 
@@ -439,32 +438,37 @@ def main():
 
             # Train model
 
-            # rf = RandomForestClassifier(random_state=args.random_state, # After search on Balanced Accuracy
-            #                             criterion='gini',
-            #                             class_weight='balanced',
-            #                             max_features='sqrt',
-            #                             min_samples_leaf=2,
-            #                             min_samples_split=10,
-            #                             max_depth=13, 
-            #                             n_estimators=148, 
-            #                             bootstrap=False,
-            #                             n_jobs=-1)
+            # svm = LinearSVC(random_state=args.random_state, # After search on Balanced Accuracy
+            #                 class_weight='balanced',
+            #                 C=50.43355830722913,
+            #                 penalty='l2',
+            #                 max_iter=4685,
+            #                 tol=0.008591948409902099,
+            #                 loss='squared_hinge',
+            #                 dual='auto')
             
-            rf = RandomForestClassifier(random_state=args.random_state, # After search on F1
-                                        criterion='gini',
-                                        class_weight='balanced',
-                                        max_features=None,
-                                        min_samples_leaf=11,
-                                        min_samples_split=4,
-                                        max_depth=10, 
-                                        n_estimators=163, 
-                                        bootstrap=True,
-                                        n_jobs=-1)
-
-            rf.fit(current_X_train, 
+            # svm = LinearSVC(random_state=args.random_state, # After search on F1
+            #                 class_weight='balanced',
+            #                 C=42.38314585579962,
+            #                 penalty='l1',
+            #                 max_iter=1839,
+            #                 tol=0.0024833156356524784,
+            #                 loss='squared_hinge',
+            #                 dual='auto')
+            
+            svm = LinearSVC(random_state=args.random_state, # After search on F1 Weighted
+                            class_weight='balanced',
+                            C=0.15475743561983535,
+                            penalty='l2',
+                            max_iter=4682,
+                            tol=0.0010381137674891905,
+                            loss='hinge',
+                            dual='auto')
+            
+            svm.fit(current_X_train, 
                     current_y_train)
-            current_y_pred_train = rf.predict(current_X_train)
-            current_y_pred_test = rf.predict(current_X_test)
+            current_y_pred_train = svm.predict(current_X_train)
+            current_y_pred_test = svm.predict(current_X_test)
 
             # Evaluation
 
