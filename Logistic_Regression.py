@@ -3,13 +3,13 @@ import numpy as np
 import argparse
 import multiprocessing
 import optuna
+import matplotlib.pyplot as plt
+import seaborn as sns
 from sklearn.linear_model import LogisticRegression
 from imblearn.over_sampling import SMOTE
 from imblearn.under_sampling import RandomUnderSampler
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import GridSearchCV, RandomizedSearchCV, StratifiedShuffleSplit, StratifiedKFold, train_test_split, cross_val_score
-from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler
-from sklearn.feature_selection import VarianceThreshold
+from sklearn.model_selection import GridSearchCV, RandomizedSearchCV, StratifiedKFold, train_test_split, cross_val_score
+from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import (
     accuracy_score,
     precision_score,
@@ -19,7 +19,7 @@ from sklearn.metrics import (
 )
 
 
-def scale_data(X_subset, categorical_cols, scaler=None):
+def scale_data(X_subset, categorical_cols, scaler=None): # Function for Scaling Non-Categorical Data
     fit_n_transform = False
 
     if scaler is None:
@@ -46,8 +46,8 @@ def scale_data(X_subset, categorical_cols, scaler=None):
 def data_preparation(df, test_size=0.2, random_state=42):
     # Drop all non-important columns
 
-    non_numeric_cols = ['Artist', 'Song Title', 'Hit', 'Spotify ID', 'Spotify Song Title', 'Spotify Primary Artist', 'Video Title of Audio']
-    X = df.drop(non_numeric_cols, 
+    non_important_cols = ['Artist', 'Song Title', 'Hit', 'Spotify ID', 'Spotify Song Title', 'Spotify Primary Artist', 'Video Title of Audio', 'Release Year']
+    X = df.drop(non_important_cols, 
                 axis=1)
     y = df['Hit']
 
@@ -78,14 +78,14 @@ def data_preparation(df, test_size=0.2, random_state=42):
                            X_categorical.columns, 
                            scaler=data_scaler)
     
-    return X_train, X_test, y_train, y_test, X_categorical.columns
+    return X_train, X_test, y_train, y_test
 
 
-def data_preparation_k_fold(df, test_size=0.2, n_folds=5, random_state=42):
+def data_preparation_k_fold(df, n_folds=5):
     # Drop all non-important columns
 
-    non_numeric_cols = ['Artist', 'Song Title', 'Hit', 'Spotify ID', 'Spotify Song Title', 'Spotify Primary Artist', 'Video Title of Audio']
-    X = df.drop(non_numeric_cols, 
+    non_important_cols = ['Artist', 'Song Title', 'Hit', 'Spotify ID', 'Spotify Song Title', 'Spotify Primary Artist', 'Video Title of Audio']
+    X = df.drop(non_important_cols, 
                 axis=1)
     y = df['Hit']
 
@@ -107,10 +107,6 @@ def data_preparation_k_fold(df, test_size=0.2, n_folds=5, random_state=42):
     y_train_x = []
     X_test_x = []
     y_test_x = []
-
-    # sss = StratifiedKFold(n_splits=n_folds, 
-    #                       test_size=test_size, 
-    #                       random_state=random_state)
 
     skf = StratifiedKFold(n_splits=n_folds)
 
@@ -134,43 +130,7 @@ def data_preparation_k_fold(df, test_size=0.2, n_folds=5, random_state=42):
     return X_train_x, X_test_x, y_train_x,  y_test_x
 
 
-def identify_highly_correlated_features(X_train, threshold=0.9):
-    correlation_matrix = X_train.corr()
-    upper_tri = correlation_matrix.where(np.triu(np.ones(correlation_matrix.shape), k=1).astype(bool))
-
-    return [column for column in upper_tri.columns if any(upper_tri[column] > threshold)]
-
-
-def identify_low_variance_features(X_train, categorical_cols, threshold=0.5):
-    X_train_non_categorical = X_train.drop(categorical_cols, 
-                                           axis=1)
-    feature_filter = VarianceThreshold(threshold)
-    X_train_non_categorical_filtered = feature_filter.fit_transform(X_train_non_categorical)
-
-    return X_train_non_categorical.columns[list(~np.array(feature_filter.get_support()))]
-
-
-def identify_top_tree_based_features(X_train, y_train, n_features):
-    rf = RandomForestClassifier(random_state=42, 
-                                criterion='gini',
-                                class_weight='balanced',
-                                max_features='sqrt',
-                                min_samples_leaf=9,
-                                min_samples_split=4,
-                                max_depth=10, 
-                                n_estimators=200,
-                                bootstrap=True)
-    rf.fit(X_train, y_train)
-
-    feature_importance = pd.DataFrame({
-        'feature': X_train.columns,
-        'importance': rf.feature_importances_
-    }).sort_values('importance', ascending=False)
-
-    return feature_importance.head(n_features)['feature'].tolist()
-
-
-def perform_grid_search(X_train, y_train, X_test, y_test, random_state=42):
+def perform_grid_search(X_train, y_train, X_test, y_test, random_state=42): # Function for performing Grid Search with LR
     param_grid = {
         'penalty': ['l2', None],
         'C': [0.1, 1, 10],
@@ -185,7 +145,7 @@ def perform_grid_search(X_train, y_train, X_test, y_test, random_state=42):
     grid_search = GridSearchCV(
         estimator=model,
         param_grid=param_grid,
-        scoring='balanced_accuracy', # f1_weighted , balanced_accuracy
+        scoring='balanced_accuracy', # f1, f1_weighted , balanced_accuracy, recall
         cv=3,
         verbose=1,
         n_jobs=multiprocessing.cpu_count()-1
@@ -202,7 +162,7 @@ def perform_grid_search(X_train, y_train, X_test, y_test, random_state=42):
     print(f"Best Parameters: {grid_search.best_params_}")
 
 
-def perform_randomized_search(X_train, y_train, X_test, y_test, random_state=42):
+def perform_randomized_search(X_train, y_train, X_test, y_test, random_state=42): # Function for performing Randomized Search with LR
     param_grid = {
         'penalty': ['l2', None],
         'C': np.linspace(0.01, 10, 50),
@@ -217,7 +177,7 @@ def perform_randomized_search(X_train, y_train, X_test, y_test, random_state=42)
     randomized_search = RandomizedSearchCV(
         estimator=model,
         param_distributions=param_grid,
-        scoring='f1', # f1_weighted , balanced_accuracy
+        scoring='f1', # f1, f1_weighted , balanced_accuracy, recall
         n_iter=100,
         cv=5,
         verbose=1,
@@ -234,7 +194,8 @@ def perform_randomized_search(X_train, y_train, X_test, y_test, random_state=42)
     print(f"Best LR Accuracy on Training Set: {accuracy_score(y_train, y_pred_train)}\nBest LR Accuracy on CV: {randomized_search.best_score_}\nBest LR Accuracy on Test Set: {accuracy_score(y_test, y_pred_test)}")
     print(f"Best Parameters: {randomized_search.best_params_}")
 
-def objective(trial, X_train, y_train, random_state=42):
+
+def objective(trial, X_train, y_train, random_state=42):  # Objective Function for performing Hyper Parameter Search Optuna
     params = {
         'class_weight':'balanced',
         'random_state': random_state, 
@@ -251,11 +212,12 @@ def objective(trial, X_train, y_train, random_state=42):
                              X_train, 
                              y_train, 
                              cv=3,
-                             scoring='f1') # f1, f1_weighted , balanced_accuracy
+                             scoring='recall') # f1, f1_weighted , balanced_accuracy, recall
     
     return np.mean(scores)
 
-def perform_optuna_search(X_train, y_train, random_state=42):
+
+def perform_optuna_search(X_train, y_train, random_state=42): # Function for performing Hyper Parameter Search Optuna
     study = optuna.create_study(direction='maximize') 
     study.optimize(lambda trial: objective(trial, X_train, y_train, random_state), 
                    n_trials=50)
@@ -267,6 +229,7 @@ def perform_optuna_search(X_train, y_train, random_state=42):
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument('--run', required=True, help="Enter a Run Name")
     parser.add_argument('--cross_validation', action='store_true', default=False, required=False, help="Pass 'cross_validation' to run Cross Validation Evaluation")
     parser.add_argument('--subset_ratios', nargs='+', default=[0.8, 0.2], required=False, help="Choose a Train/Test Ratio. Default is 0.8/0.2")
     parser.add_argument('--random_state', type=int, default=42, required=False, help="Choose a Random State. Default is 42")
@@ -276,133 +239,95 @@ def main():
 
     # Load in Data
 
-    data_df = pd.read_csv("Final Datasets after Further Filtering\Reordered_Preprocessed_Labeled_Songs_per_Hot_100_with_Spotify_Features_and_Audio_Features_53260.csv")
+    data_df = pd.read_csv("Final Datasets after Further Filtering\Reordered_Preprocessed_Labeled_Songs_per_Hot_100_with_Spotify_Features_and_Audio_Features_52896.csv")
     
-    if args.class_imbalance_handling == 'resample':
-        data_df_positives = data_df[data_df['Hit'] == 1].sample(frac=1, ignore_index=True, random_state=args.random_state)
-        data_df_negatives = data_df[data_df['Hit'] == 0].sample(frac=1, ignore_index=True, random_state=args.random_state)
+    # Defining different Data Splits
 
-        if len(data_df_positives) >= len(data_df_negatives):
-            data_df = pd.concat([data_df_positives[:len(data_df_negatives)], data_df_negatives]).sample(frac=1, ignore_index=True, random_state=args.random_state)
-        else:
-            data_df = pd.concat([data_df_positives, data_df_negatives[:len(data_df_positives)]]).sample(frac=1, ignore_index=True, random_state=args.random_state)
-    
-    X_train, X_test, y_train, y_test, categorical_cols = data_preparation(data_df, 
-                                                                          test_size=float(args.subset_ratios[1]), 
-                                                                          random_state=args.random_state)
+    data_splits = {'Full': data_df,
+                   '1960s': data_df[(data_df['Release Year'] >= 1960) & (data_df['Release Year'] < 1970)].reset_index(drop=True),
+                   '1970s': data_df[(data_df['Release Year'] >= 1970) & (data_df['Release Year'] < 1980)].reset_index(drop=True),
+                   '1980s': data_df[(data_df['Release Year'] >= 1980) & (data_df['Release Year'] < 1990)].reset_index(drop=True),
+                   '1990s': data_df[(data_df['Release Year'] >= 1990) & (data_df['Release Year'] < 2000)].reset_index(drop=True),
+                   '2000s': data_df[(data_df['Release Year'] >= 2000) & (data_df['Release Year'] < 2010)].reset_index(drop=True),
+                   '2010s': data_df[(data_df['Release Year'] >= 2010) & (data_df['Release Year'] < 2020)].reset_index(drop=True),
+                   '2020s': data_df[data_df['Release Year'] >= 2020].reset_index(drop=True)}
 
-    oversampler = SMOTE(random_state=args.random_state, 
-                        sampling_strategy=1)
-    undersampler = RandomUnderSampler(random_state=args.random_state, 
-                                      sampling_strategy=1)
-    
-    if args.class_imbalance_handling == 'oversample':
-        X_train, y_train = oversampler.fit_resample(X_train, 
-                                                    y_train)
+    ds_accuracies_training = []
+    ds_accuracies_test = []
+    ds_precisions = []
+    ds_recalls = []
+    ds_f1s = []
 
-    if args.class_imbalance_handling == 'undersample':
-        X_train, y_train = undersampler.fit_resample(X_train, 
-                                                     y_train)
+    # Loop over all Data Splits
 
-    if args.hyper_parameter_search == 'grid_search':
-        perform_grid_search(X_train, 
-                            y_train, 
-                            X_test, 
-                            y_test, 
-                            random_state=args.random_state)
+    for ds_name, ds in data_splits.items():
+        # Code for Imbalance Handling: Resample
 
-    if args.hyper_parameter_search == 'randomized_search':
-        perform_randomized_search(X_train, 
-                                  y_train, 
-                                  X_test, 
-                                  y_test,
-                                  random_state=args.random_state)
+        if args.class_imbalance_handling == 'resample':
+            ds_positives = ds[ds['Hit'] == 1].sample(frac=1, ignore_index=True, random_state=args.random_state)
+            ds_negatives = ds[ds['Hit'] == 0].sample(frac=1, ignore_index=True, random_state=args.random_state)
 
-    if args.hyper_parameter_search == 'optuna':
-        perform_optuna_search(X_train, 
-                              y_train, 
-                              random_state=args.random_state)
+            if len(ds_positives) >= len(ds_negatives):
+                ds = pd.concat([ds_positives[:len(ds_negatives)], ds_negatives]).sample(frac=1, ignore_index=True, random_state=args.random_state)
+            else:
+                ds = pd.concat([ds_positives, ds_negatives[:len(ds_positives)]]).sample(frac=1, ignore_index=True, random_state=args.random_state)
 
-    # Train model
+        if not args.cross_validation: # Code for Regular Run
+            X_train, X_test, y_train, y_test = data_preparation(ds, 
+                                                                test_size=float(args.subset_ratios[1]), 
+                                                                random_state=args.random_state)
 
-    # lr = LogisticRegression(random_state=args.random_state, # After search on Balanced Accuracy
-    #                         class_weight='balanced',
-    #                         solver='lbfgs',
-    #                         penalty= 'l2',
-    #                         C=54.73925133294406,
-    #                         fit_intercept=True,
-    #                         max_iter=372)
-
-    # lr = LogisticRegression(random_state=args.random_state, # After search on F1 Weighted
-    #                         class_weight='balanced',
-    #                         solver='lbfgs',
-    #                         penalty= 'l2',
-    #                         C=0.20235637320086464,
-    #                         fit_intercept=True,
-    #                         max_iter=439)
-    
-    lr = LogisticRegression(random_state=args.random_state, # After search on F1
-                            class_weight='balanced',
-                            solver='sag',
-                            penalty= 'l2',
-                            C=42.93180795553438,
-                            fit_intercept=True,
-                            max_iter=1728)
-    
-    lr.fit(X_train, 
-            y_train)
-    y_pred_training = lr.predict(X_train)
-    y_pred_test = lr.predict(X_test)
-
-    # Evaluation
-
-    print("\nRegular Evaluation:\n")
-    print(f"- Accuracy on Training Set: {accuracy_score(y_train, y_pred_training)}")
-    print(f"- Accuracy: {accuracy_score(y_test, y_pred_test)}")
-    print(f"- Precision: {precision_score(y_test, y_pred_test)}")
-    print(f"- Recall: {recall_score(y_test, y_pred_test)}")
-    print(f"- F1 Score: {f1_score(y_test, y_pred_test)}\n\n")
-
-    if args.cross_validation:
-        X_train_x, X_test_x, y_train_x, y_test_x = data_preparation_k_fold(data_df, 
-                                                                           n_folds=10,
-                                                                           test_size=float(args.subset_ratios[1]), 
-                                                                           random_state=args.random_state)
-        
-        cross_validation_accuracies_train = []
-        cross_validation_accuracies_test = []
-        cross_validation_precisions = []
-        cross_validation_recalls = []
-        cross_validation_f1_scores = []
-
-        for i in range(len(X_train_x)):
-            current_X_train = X_train_x[i]
-            current_X_test = X_test_x[i]
-            current_y_train = y_train_x[i]
-            current_y_test = y_test_x[i]
-
-            current_oversampler = SMOTE(random_state=args.random_state, 
-                                        sampling_strategy=1)
-            current_undersampler = RandomUnderSampler(random_state=args.random_state,
-                                                      sampling_strategy=1)
+            oversampler = SMOTE(random_state=args.random_state, 
+                                sampling_strategy=1)
+            undersampler = RandomUnderSampler(random_state=args.random_state, 
+                                            sampling_strategy=1)
             
+            # Code for Imbalance Handling: Oversample
+
             if args.class_imbalance_handling == 'oversample':
-                current_X_train, current_y_train = current_oversampler.fit_resample(current_X_train, 
-                                                                                    current_y_train)
+                X_train, y_train = oversampler.fit_resample(X_train, 
+                                                            y_train)
+
+            # Code for Imbalance Handling: Undersample
 
             if args.class_imbalance_handling == 'undersample':
-                current_X_train, current_y_train = current_undersampler.fit_resample(current_X_train, 
-                                                                                     current_y_train)
+                X_train, y_train = undersampler.fit_resample(X_train, 
+                                                             y_train)
+
+            # Code for Hyper Parameter Search: Grid Search
+
+            if args.hyper_parameter_search == 'grid_search':
+                perform_grid_search(X_train, 
+                                    y_train, 
+                                    X_test, 
+                                    y_test, 
+                                    random_state=args.random_state)
+
+            # Code for Hyper Parameter Search: Randomized Search
+
+            if args.hyper_parameter_search == 'randomized_search':
+                perform_randomized_search(X_train, 
+                                          y_train, 
+                                          X_test, 
+                                          y_test,
+                                          random_state=args.random_state)
+                
+            # Code for Hyper Parameter Search: Optuna
+
+            if args.hyper_parameter_search == 'optuna':
+                perform_optuna_search(X_train, 
+                                      y_train, 
+                                      random_state=args.random_state)
 
             # Train model
 
             # lr = LogisticRegression(random_state=args.random_state, # After search on Balanced Accuracy
-            #                 class_weight='balanced',
-            #                 solver='lbfgs',
-            #                 penalty= 'l2',
-            #                 C=54.73925133294406,
-            #                 fit_intercept=True,
-            #                 max_iter=372)
+            #                         class_weight='balanced',
+            #                         solver='lbfgs',
+            #                         penalty= 'l2',
+            #                         C=54.73925133294406,
+            #                         fit_intercept=True,
+            #                         max_iter=372)
 
             # lr = LogisticRegression(random_state=args.random_state, # After search on F1 Weighted
             #                         class_weight='balanced',
@@ -411,6 +336,14 @@ def main():
             #                         C=0.20235637320086464,
             #                         fit_intercept=True,
             #                         max_iter=439)
+
+            # lr = LogisticRegression(random_state=args.random_state, # After search on Recall
+            #                         class_weight='balanced',
+            #                         solver='sag',
+            #                         penalty= None,
+            #                         C=99.63641008554808,
+            #                         fit_intercept=False,
+            #                         max_iter=53)
             
             lr = LogisticRegression(random_state=args.random_state, # After search on F1
                                     class_weight='balanced',
@@ -419,27 +352,159 @@ def main():
                                     C=42.93180795553438,
                                     fit_intercept=True,
                                     max_iter=1728)
+
+            lr.fit(X_train, 
+                   y_train)
+            y_pred_training = lr.predict(X_train)
+            y_pred_test = lr.predict(X_test)
+
+            # Regular Evaluation
+
+            accuracy_training = accuracy_score(y_train, y_pred_training)
+            accuracy_test = accuracy_score(y_test, y_pred_test)
+            precision = precision_score(y_test, y_pred_test)
+            recall = recall_score(y_test, y_pred_test)
+            f1 = f1_score(y_test, y_pred_test)
+            cm = confusion_matrix(y_test, y_pred_test)
+
+            print(f"\nRegular Evaluation for Datasplit {ds_name}:\n")
+            print(f"- Accuracy on Training Set: {accuracy_training}")
+            print(f"- Accuracy: {accuracy_test}")
+            print(f"- Precision: {precision}")
+            print(f"- Recall: {recall}")
+            print(f"- F1 Score: {f1}")
+            print(f"- Confusion Matrix:\n{cm}\n\n")
+
+            ds_accuracies_training.append(accuracy_training)
+            ds_accuracies_test.append(accuracy_test)
+            ds_precisions.append(precision)
+            ds_recalls.append(recall)
+            ds_f1s.append(f1)
+        else: # Code for Cross-Validation Evaluation
+            X_train_x, X_test_x, y_train_x, y_test_x = data_preparation_k_fold(ds,
+                                                                               n_folds=10)
             
-            lr.fit(current_X_train, 
-                   current_y_train)
-            current_y_pred_train = lr.predict(current_X_train)
-            current_y_pred_test = lr.predict(current_X_test)
+            cross_validation_accuracies_train = []
+            cross_validation_accuracies_test = []
+            cross_validation_precisions = []
+            cross_validation_recalls = []
+            cross_validation_f1_scores = []
+            cm_over_folds = np.zeros((2, 2), dtype=int)
 
-            # Evaluation
+            # Loop over all Cross-Validation Splits
 
-            cross_validation_accuracies_train.append(accuracy_score(current_y_train, current_y_pred_train))
-            cross_validation_accuracies_test.append(accuracy_score(current_y_test, current_y_pred_test))
-            cross_validation_precisions.append(precision_score(current_y_test, current_y_pred_test))
-            cross_validation_recalls.append(recall_score(current_y_test, current_y_pred_test))
-            cross_validation_f1_scores.append(f1_score(current_y_test, current_y_pred_test))
+            for i in range(len(X_train_x)):
+                current_X_train = X_train_x[i]
+                current_X_test = X_test_x[i]
+                current_y_train = y_train_x[i]
+                current_y_test = y_test_x[i]
 
-        
-        print(f"\nCross-Validation Evaluation over all {len(cross_validation_accuracies_test)} Folds:\n")
-        print(f"- Mean Accuracy on Training Set: {np.array(cross_validation_accuracies_train).mean()}")
-        print(f"- Mean Accuracy: {np.array(cross_validation_accuracies_test).mean()}")
-        print(f"- Mean Precision: {np.array(cross_validation_precisions).mean()}")
-        print(f"- Mean Recall: {np.array(cross_validation_recalls).mean()}")
-        print(f"- Mean F1 Score: {np.array(cross_validation_f1_scores).mean()}\n\n")
+                current_oversampler = SMOTE(random_state=args.random_state, 
+                                            sampling_strategy=1)
+                current_undersampler = RandomUnderSampler(random_state=args.random_state,
+                                                        sampling_strategy=1)
+                
+                if args.class_imbalance_handling == 'oversample':
+                    current_X_train, current_y_train = current_oversampler.fit_resample(current_X_train, 
+                                                                                        current_y_train)
+
+                if args.class_imbalance_handling == 'undersample':
+                    current_X_train, current_y_train = current_undersampler.fit_resample(current_X_train,
+                                                                                         current_y_train)
+
+                # Train model
+
+                # lr = LogisticRegression(random_state=args.random_state, # After search on Balanced Accuracy
+                #                 class_weight='balanced',
+                #                 solver='lbfgs',
+                #                 penalty= 'l2',
+                #                 C=54.73925133294406,
+                #                 fit_intercept=True,
+                #                 max_iter=372)
+
+                # lr = LogisticRegression(random_state=args.random_state, # After search on F1 Weighted
+                #                         class_weight='balanced',
+                #                         solver='lbfgs',
+                #                         penalty= 'l2',
+                #                         C=0.20235637320086464,
+                #                         fit_intercept=True,
+                #                         max_iter=439)
+
+                # lr = LogisticRegression(random_state=args.random_state, # After search on Recall
+                #                         class_weight='balanced',
+                #                         solver='sag',
+                #                         penalty= None,
+                #                         C=99.63641008554808,
+                #                         fit_intercept=False,
+                #                         max_iter=53)
+                
+                lr = LogisticRegression(random_state=args.random_state, # After search on F1
+                                        class_weight='balanced',
+                                        solver='sag',
+                                        penalty= 'l2',
+                                        C=42.93180795553438,
+                                        fit_intercept=True,
+                                        max_iter=1728)
+                
+                lr.fit(current_X_train, 
+                       current_y_train)
+                current_y_pred_train = lr.predict(current_X_train)
+                current_y_pred_test = lr.predict(current_X_test)
+
+                # Single Split Evaluation
+
+                cross_validation_accuracies_train.append(accuracy_score(current_y_train, current_y_pred_train))
+                cross_validation_accuracies_test.append(accuracy_score(current_y_test, current_y_pred_test))
+                cross_validation_precisions.append(precision_score(current_y_test, current_y_pred_test))
+                cross_validation_recalls.append(recall_score(current_y_test, current_y_pred_test))
+                cross_validation_f1_scores.append(f1_score(current_y_test, current_y_pred_test))
+                cm_over_folds += confusion_matrix(current_y_test, current_y_pred_test)
+
+            # Cross-Validation Evaluation
+            
+            print(f"\nCross-Validation Evaluation over all {len(cross_validation_accuracies_test)} Folds for Datasplit {ds_name}:\n")
+            print(f"- Mean Accuracy on Training Set: {np.array(cross_validation_accuracies_train).mean()}")
+            print(f"- Mean Accuracy: {np.array(cross_validation_accuracies_test).mean()}")
+            print(f"- Mean Precision: {np.array(cross_validation_precisions).mean()}")
+            print(f"- Mean Recall: {np.array(cross_validation_recalls).mean()}")
+            print(f"- Mean F1 Score: {np.array(cross_validation_f1_scores).mean()}")
+            print(f"- Confusion Matrix:\n{cm_over_folds}\n\n")
+
+            ds_accuracies_training.append(np.array(cross_validation_accuracies_train).mean())
+            ds_accuracies_test.append(np.array(cross_validation_accuracies_test).mean())
+            ds_precisions.append(np.array(cross_validation_precisions).mean())
+            ds_recalls.append(np.array(cross_validation_recalls).mean())
+            ds_f1s.append(np.array(cross_validation_f1_scores).mean())
+
+            # Save Confusion Matrix of Data Split to File
+
+            plt.figure(figsize=(8, 6))
+            sns.heatmap(cm_over_folds, annot=True, 
+                        fmt='d', 
+                        cmap='Blues', 
+                        xticklabels=['No Hit', 'Hit'], 
+                        yticklabels=['No Hit', 'Hit'])
+            plt.title(f"Confusion Matrix of LR over All {len(cross_validation_accuracies_test)} Folds with {ds_name} Dataset")
+            plt.savefig(f"Confusion Matrices/LR/Confusion_Matrix_{ds_name}.png")
+
+    # Save Results to File
+    
+    if not args.cross_validation:
+        pd.DataFrame({"Data Split": data_splits.keys(), 
+                      "Training Accuracy": ds_accuracies_training,
+                      "Test Accuracy": ds_accuracies_test,
+                      "Precision": ds_precisions,
+                      "Recall": ds_recalls,
+                      "F1": ds_f1s}).to_csv(f"Regular Evaluation Results/LR/Results_{args.run}.csv", 
+                                            index=False)
+    else:
+        pd.DataFrame({"Data Split": data_splits.keys(), 
+                      "Training Accuracy": ds_accuracies_training,
+                      "Test Accuracy": ds_accuracies_test,
+                      "Precision": ds_precisions,
+                      "Recall": ds_recalls,
+                      "F1": ds_f1s}).to_csv(f"10-Fold Cross-Validation Results/LR/Results_{args.run}.csv", 
+                                            index=False)
 
 
 if __name__ == "__main__":

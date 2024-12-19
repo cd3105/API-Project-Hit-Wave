@@ -3,12 +3,13 @@ import numpy as np
 import argparse
 import multiprocessing
 import optuna
+import matplotlib.pyplot as plt
+import seaborn as sns
 from xgboost import XGBClassifier
 from imblearn.over_sampling import SMOTE
 from imblearn.under_sampling import RandomUnderSampler
 from sklearn.utils.class_weight import compute_sample_weight
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import GridSearchCV, RandomizedSearchCV, StratifiedShuffleSplit, StratifiedKFold, train_test_split, cross_val_score
+from sklearn.model_selection import GridSearchCV, RandomizedSearchCV, StratifiedKFold, train_test_split, cross_val_score
 from sklearn.preprocessing import StandardScaler
 from sklearn.feature_selection import VarianceThreshold
 from sklearn.metrics import (
@@ -20,7 +21,7 @@ from sklearn.metrics import (
 )
 
 
-def scale_data(X_subset, categorical_cols, scaler=None):
+def scale_data(X_subset, categorical_cols, scaler=None): # Function for Scaling Non-Categorical Data
     fit_n_transform = False
 
     if scaler is None:
@@ -47,8 +48,8 @@ def scale_data(X_subset, categorical_cols, scaler=None):
 def data_preparation(df, test_size=0.2, random_state=42):
     # Drop all non-important columns
 
-    non_numeric_cols = ['Artist', 'Song Title', 'Hit', 'Spotify ID', 'Spotify Song Title', 'Spotify Primary Artist', 'Video Title of Audio']
-    X = df.drop(non_numeric_cols, 
+    non_important_cols = ['Artist', 'Song Title', 'Hit', 'Spotify ID', 'Spotify Song Title', 'Spotify Primary Artist', 'Video Title of Audio', 'Release Year']
+    X = df.drop(non_important_cols, 
                 axis=1)
     y = df['Hit']
 
@@ -82,11 +83,11 @@ def data_preparation(df, test_size=0.2, random_state=42):
     return X_train, X_test, y_train, y_test, X_categorical.columns
 
 
-def data_preparation_k_fold(df, test_size=0.2, n_folds=5, random_state=42):
+def data_preparation_k_fold(df, n_folds=5):
     # Drop all non-important columns
 
-    non_numeric_cols = ['Artist', 'Song Title', 'Hit', 'Spotify ID', 'Spotify Song Title', 'Spotify Primary Artist', 'Video Title of Audio']
-    X = df.drop(non_numeric_cols, 
+    non_important_cols = ['Artist', 'Song Title', 'Hit', 'Spotify ID', 'Spotify Song Title', 'Spotify Primary Artist', 'Video Title of Audio', 'Release Year']
+    X = df.drop(non_important_cols, 
                 axis=1)
     y = df['Hit']
 
@@ -109,10 +110,6 @@ def data_preparation_k_fold(df, test_size=0.2, n_folds=5, random_state=42):
     X_test_x = []
     y_test_x = []
 
-    # sss = StratifiedShuffleSplit(n_splits=n_folds, 
-    #                              test_size=test_size, 
-    #                              random_state=random_state)
-    
     skf = StratifiedKFold(n_splits=n_folds)
 
     for (train_index, test_index) in skf.split(X, y):
@@ -132,17 +129,17 @@ def data_preparation_k_fold(df, test_size=0.2, n_folds=5, random_state=42):
         X_test_x.append(current_X_test)
         y_test_x.append(current_y_test)
     
-    return X_train_x, X_test_x, y_train_x,  y_test_x
+    return X_train_x, X_test_x, y_train_x,  y_test_x, X_categorical.columns
 
 
-def identify_highly_correlated_features(X_train, threshold=0.9):
+def identify_highly_correlated_features(X_train, threshold=0.9): # Function for removing Highly Correlated Features
     correlation_matrix = X_train.corr()
     upper_tri = correlation_matrix.where(np.triu(np.ones(correlation_matrix.shape), k=1).astype(bool))
 
     return [column for column in upper_tri.columns if any(upper_tri[column] > threshold)]
 
 
-def identify_low_variance_features(X_train, categorical_cols, threshold=0.5):
+def identify_low_variance_features(X_train, categorical_cols, threshold=0.5): # Function for removing Low Variance Non-Categorical Features
     X_train_non_categorical = X_train.drop(categorical_cols, 
                                            axis=1)
     feature_filter = VarianceThreshold(threshold)
@@ -151,31 +148,7 @@ def identify_low_variance_features(X_train, categorical_cols, threshold=0.5):
     return X_train_non_categorical.columns[list(~np.array(feature_filter.get_support()))]
 
 
-def identify_top_tree_based_features(X_train, y_train, n_features):
-    xgb = XGBClassifier(random_state=42, 
-                        eval_metric='logloss', 
-                        colsample_bytree=0.9295494044854866, 
-                        learning_rate=0.05942205773843994, 
-                        max_depth=11, 
-                        min_child_weight=5,
-                        n_estimators=1190, 
-                        subsample=0.631845978626705,
-                        gamma=0.5283302939558705,
-                        reg_lambda=15.349380699483927, 
-                        reg_alpha=14.46196843183752,
-                        n_jobs=-1)
-    xgb.fit(X_train, 
-           y_train)
-
-    feature_importance = pd.DataFrame({
-        'feature': X_train.columns,
-        'importance': xgb.feature_importances_
-    }).sort_values('importance', ascending=False)
-
-    return feature_importance.head(n_features)['feature'].tolist()
-
-
-def perform_grid_search(X_train, y_train, X_test, y_test, sample_class_weights=None, random_state=42):
+def perform_grid_search(X_train, y_train, X_test, y_test, sample_class_weights=None, random_state=42): # Function for performing Grid Search with XGBoost
     param_grid = {
         'n_estimators': [100, 300, 500],
         'learning_rate': [0.1, 0.3, 0.5],
@@ -212,7 +185,7 @@ def perform_grid_search(X_train, y_train, X_test, y_test, sample_class_weights=N
     print(f"Best Parameters: {grid_search.best_params_}")
 
 
-def perform_randomized_search(X_train, y_train, X_test, y_test, sample_class_weights=None, random_state=42):
+def perform_randomized_search(X_train, y_train, X_test, y_test, sample_class_weights=None, random_state=42):  # Function for performing Randomized Search with XGBoost
     param_grid = {
         'n_estimators':  np.arange(100, 1000, 100),
         'learning_rate': np.linspace(0.05, 0.5, 10),
@@ -252,7 +225,8 @@ def perform_randomized_search(X_train, y_train, X_test, y_test, sample_class_wei
     print(f"Best XGB Accuracy on Training Set: {accuracy_score(y_train, y_pred_train)}\nBest XGB Accuracy on CV: {randomized_search.best_score_}\nBest XGB Accuracy on Test Set: {accuracy_score(y_test, y_pred_test)}")
     print(f"Best Parameters: {randomized_search.best_params_}")
 
-def objective(trial, X_train, y_train, sample_class_weights, random_state=42):
+
+def objective(trial, X_train, y_train, sample_class_weights, random_state=42): # Objective Function for performing Hyper Parameter Search Optuna with XGBoost
     params = {
         'random_state': random_state, 
         'objective': 'binary:logistic', 
@@ -274,12 +248,13 @@ def objective(trial, X_train, y_train, sample_class_weights, random_state=42):
                              X_train, 
                              y_train, 
                              cv=3, 
-                             scoring='balanced_accuracy', # 'f1', 'f1_weighted', 'accuracy', 'balanced_accuracy'
+                             scoring='recall', # 'f1', 'f1_weighted', 'accuracy', 'balanced_accuracy'
                              fit_params={"sample_weight": sample_class_weights})
     
     return np.mean(scores)
 
-def perform_optuna_search(X_train, y_train, sample_class_weights=None, random_state=42):
+
+def perform_optuna_search(X_train, y_train, sample_class_weights=None, random_state=42): # Function for performing Hyper Parameter Search Optuna
     study = optuna.create_study(direction='maximize') 
     study.optimize(lambda trial: objective(trial, X_train, y_train, sample_class_weights, random_state), 
                    n_trials=50)
@@ -291,6 +266,7 @@ def perform_optuna_search(X_train, y_train, sample_class_weights=None, random_st
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument('--run', required=True, help="Enter a Run Name")
     parser.add_argument('--cross_validation', action='store_true', default=False, required=False, help="Pass 'cross_validation' to run Cross Validation Evaluation")
     parser.add_argument('--subset_ratios', nargs='+', default=[0.8, 0.2], required=False, help="Choose a Train/Test Ratio. Default is 0.8/0.2")
     parser.add_argument('--random_state', type=int, default=42, required=False, help="Choose a Random State. Default is 42")
@@ -300,172 +276,108 @@ def main():
 
     # Load in Data
 
-    data_df = pd.read_csv("Final Datasets after Further Filtering\Reordered_Preprocessed_Labeled_Songs_per_Hot_100_with_Spotify_Features_and_Audio_Features_53260.csv")
+    data_df = pd.read_csv("Final Datasets after Further Filtering\Reordered_Preprocessed_Labeled_Songs_per_Hot_100_with_Spotify_Features_and_Audio_Features_52896.csv")
+
+    # Defining different Data Splits
+
+    data_splits = {'Full': data_df,
+                   '1960s': data_df[(data_df['Release Year'] >= 1960) & (data_df['Release Year'] < 1970)].reset_index(drop=True),
+                   '1970s': data_df[(data_df['Release Year'] >= 1970) & (data_df['Release Year'] < 1980)].reset_index(drop=True),
+                   '1980s': data_df[(data_df['Release Year'] >= 1980) & (data_df['Release Year'] < 1990)].reset_index(drop=True),
+                   '1990s': data_df[(data_df['Release Year'] >= 1990) & (data_df['Release Year'] < 2000)].reset_index(drop=True),
+                   '2000s': data_df[(data_df['Release Year'] >= 2000) & (data_df['Release Year'] < 2010)].reset_index(drop=True),
+                   '2010s': data_df[(data_df['Release Year'] >= 2010) & (data_df['Release Year'] < 2020)].reset_index(drop=True),
+                   '2020s': data_df[data_df['Release Year'] >= 2020].reset_index(drop=True)}
     
-    if args.class_imbalance_handling == 'resample':
-        data_df_positives = data_df[data_df['Hit'] == 1].sample(frac=1, ignore_index=True, random_state=args.random_state)
-        data_df_negatives = data_df[data_df['Hit'] == 0].sample(frac=1, ignore_index=True, random_state=args.random_state)
-
-        if len(data_df_positives) >= len(data_df_negatives):
-            data_df = pd.concat([data_df_positives[:len(data_df_negatives)], data_df_negatives]).sample(frac=1, ignore_index=True, random_state=args.random_state)
-        else:
-            data_df = pd.concat([data_df_positives, data_df_negatives[:len(data_df_positives)]]).sample(frac=1, ignore_index=True, random_state=args.random_state)
+    ds_accuracies_training = []
+    ds_accuracies_test = []
+    ds_precisions = []
+    ds_recalls = []
+    ds_f1s = []
     
-    X_train, X_test, y_train, y_test, categorical_cols = data_preparation(data_df, 
-                                                                          test_size=float(args.subset_ratios[1]), 
-                                                                          random_state=args.random_state)
+    # Loop over all Data Splits
 
-    # Remove Features with a Very High Correlation
+    for ds_name, ds in data_splits.items():
+        # Code for Imbalance Handling: Resample
 
-    highly_correlated_features = identify_highly_correlated_features(X_train)
+        if args.class_imbalance_handling == 'resample':
+            data_df_positives = data_df[data_df['Hit'] == 1].sample(frac=1, ignore_index=True, random_state=args.random_state)
+            data_df_negatives = data_df[data_df['Hit'] == 0].sample(frac=1, ignore_index=True, random_state=args.random_state)
 
-    X_train = X_train.drop(columns=highly_correlated_features)
-    X_test = X_test.drop(columns=highly_correlated_features)
-
-    # Remove Feature with a Very Low Variance
-
-    low_variance_features = identify_low_variance_features(X_train, 
-                                                           categorical_cols)
-
-    X_train = X_train.drop(columns=low_variance_features)
-    X_test = X_test.drop(columns=low_variance_features)
-
-    oversampler = SMOTE(random_state=args.random_state, 
-                        sampling_strategy=1)
-    undersampler = RandomUnderSampler(random_state=args.random_state, 
-                                      sampling_strategy=1)
-    
-    if args.class_imbalance_handling == 'oversample':
-        X_train, y_train = oversampler.fit_resample(X_train, 
-                                                    y_train)
-
-    if args.class_imbalance_handling == 'undersample':
-        X_train, y_train = undersampler.fit_resample(X_train, 
-                                                     y_train)
-    
-    sample_class_weights = compute_sample_weight(class_weight='balanced', 
-                                                 y=y_train)
-
-    if args.hyper_parameter_search == 'grid_search':
-        perform_grid_search(X_train, 
-                            y_train, 
-                            X_test, 
-                            y_test, 
-                            sample_class_weights=sample_class_weights, 
-                            random_state=args.random_state)
-
-    if args.hyper_parameter_search == 'randomized_search':
-        perform_randomized_search(X_train, 
-                                  y_train, 
-                                  X_test, 
-                                  y_test, 
-                                  sample_class_weights=sample_class_weights, 
-                                  random_state=args.random_state)
-
-    if args.hyper_parameter_search == 'optuna':
-        perform_optuna_search(X_train, 
-                              y_train, 
-                              sample_class_weights=sample_class_weights, 
-                              random_state=args.random_state)
-
-    # Train model
-
-    # xgb = XGBClassifier(random_state=args.random_state, # After search on F1 with Oversampling 
-    #                     eval_metric='logloss', 
-    #                     colsample_bytree=0.735947043008583, 
-    #                     learning_rate=0.14668211285518798, 
-    #                     max_depth=9, 
-    #                     min_child_weight=7,
-    #                     n_estimators=1135, 
-    #                     subsample=0.8131090921418384,
-    #                     gamma=0.31199353789149753,
-    #                     reg_lambda=11.891452528606097, 
-    #                     reg_alpha=2.199357732253043,
-    #                     n_jobs=-1)
-    
-    xgb = XGBClassifier(random_state=args.random_state, # After search on Balanced Accuracy with Oversampling 
-                        eval_metric='logloss', 
-                        colsample_bytree=0.9295494044854866, 
-                        learning_rate=0.001942205773843994, 
-                        max_depth=8, 
-                        min_child_weight=5,
-                        n_estimators=3190, 
-                        subsample=0.631845978626705,
-                        gamma=0.7283302939558705,
-                        reg_lambda=15.349380699483927, 
-                        reg_alpha=14.46196843183752,
-                        n_jobs=-1,
-                        early_stopping_rounds=10)
-    
-    xgb.fit(X_train, 
-            y_train, 
-            sample_weight=sample_class_weights, 
-            eval_set=[(X_test, y_test)], 
-            verbose=False)
-    y_pred_training = xgb.predict(X_train)
-    y_pred_test = xgb.predict(X_test)
-
-    # Evaluation
-
-    print("\nRegular Evaluation:\n")
-    print(f"- Accuracy on Training Set: {accuracy_score(y_train, y_pred_training)}")
-    print(f"- Accuracy: {accuracy_score(y_test, y_pred_test)}")
-    print(f"- Precision: {precision_score(y_test, y_pred_test)}")
-    print(f"- Recall: {recall_score(y_test, y_pred_test)}")
-    print(f"- F1 Score: {f1_score(y_test, y_pred_test)}\n\n")
-
-    if args.cross_validation:
-        X_train_x, X_test_x, y_train_x, y_test_x = data_preparation_k_fold(data_df, 
-                                                                           n_folds=10,
-                                                                           test_size=float(args.subset_ratios[1]), 
-                                                                           random_state=args.random_state)
+            if len(data_df_positives) >= len(data_df_negatives):
+                data_df = pd.concat([data_df_positives[:len(data_df_negatives)], data_df_negatives]).sample(frac=1, ignore_index=True, random_state=args.random_state)
+            else:
+                data_df = pd.concat([data_df_positives, data_df_negatives[:len(data_df_positives)]]).sample(frac=1, ignore_index=True, random_state=args.random_state)
         
-        cross_validation_accuracies_train = []
-        cross_validation_accuracies_test = []
-        cross_validation_precisions = []
-        cross_validation_recalls = []
-        cross_validation_f1_scores = []
-
-        for i in range(len(X_train_x)):
-            current_X_train = X_train_x[i]
-            current_X_test = X_test_x[i]
-            current_y_train = y_train_x[i]
-            current_y_test = y_test_x[i]
+        if not args.cross_validation: # Code for Regular Run    
+            X_train, X_test, y_train, y_test, categorical_cols = data_preparation(ds, 
+                                                                                  test_size=float(args.subset_ratios[1]), 
+                                                                                  random_state=args.random_state)
 
             # Remove Features with a Very High Correlation
 
-            current_highly_correlated_features = identify_highly_correlated_features(current_X_train)
+            highly_correlated_features = identify_highly_correlated_features(X_train)
 
-            current_X_train = current_X_train.drop(columns=current_highly_correlated_features)
-            current_X_test = current_X_test.drop(columns=current_highly_correlated_features)
+            X_train = X_train.drop(columns=highly_correlated_features)
+            X_test = X_test.drop(columns=highly_correlated_features)
 
             # Remove Feature with a Very Low Variance
 
-            current_low_variance_features = identify_low_variance_features(current_X_train, 
-                                                                           categorical_cols)
+            low_variance_features = identify_low_variance_features(X_train, 
+                                                                categorical_cols)
 
-            current_X_train = current_X_train.drop(columns=current_low_variance_features)
-            current_X_test = current_X_test.drop(columns=current_low_variance_features)
+            X_train = X_train.drop(columns=low_variance_features)
+            X_test = X_test.drop(columns=low_variance_features)
 
-            current_oversampler = SMOTE(random_state=args.random_state, 
-                                        sampling_strategy=1)
-            current_undersampler = RandomUnderSampler(random_state=args.random_state,
-                                                      sampling_strategy=1)
+            oversampler = SMOTE(random_state=args.random_state, 
+                                sampling_strategy=1)
+            undersampler = RandomUnderSampler(random_state=args.random_state, 
+                                            sampling_strategy=1)
+            
+            # Code for Imbalance Handling: Oversample
             
             if args.class_imbalance_handling == 'oversample':
-                current_X_train, current_y_train = current_oversampler.fit_resample(current_X_train, 
-                                                                                    current_y_train)
+                X_train, y_train = oversampler.fit_resample(X_train, 
+                                                            y_train)
+                
+            # Code for Imbalance Handling: Undersample
 
             if args.class_imbalance_handling == 'undersample':
-                current_X_train, current_y_train = current_undersampler.fit_resample(current_X_train, 
-                                                                                     current_y_train)
+                X_train, y_train = undersampler.fit_resample(X_train, 
+                                                            y_train)
             
-            current_sample_class_weights = compute_sample_weight(class_weight='balanced', 
-                                                                 y=current_y_train)
+            sample_class_weights = compute_sample_weight(class_weight='balanced', 
+                                                        y=y_train)
+            
+            # Code for Hyper Parameter Search: Grid Search
+
+            if args.hyper_parameter_search == 'grid_search':
+                perform_grid_search(X_train, 
+                                    y_train, 
+                                    X_test, 
+                                    y_test, 
+                                    sample_class_weights=sample_class_weights, 
+                                    random_state=args.random_state)
+                
+            # Code for Hyper Parameter Search: Randomized Search
+
+            if args.hyper_parameter_search == 'randomized_search':
+                perform_randomized_search(X_train, 
+                                        y_train, 
+                                        X_test, 
+                                        y_test, 
+                                        sample_class_weights=sample_class_weights, 
+                                        random_state=args.random_state)
+
+            if args.hyper_parameter_search == 'optuna':
+                perform_optuna_search(X_train, 
+                                    y_train, 
+                                    sample_class_weights=sample_class_weights, 
+                                    random_state=args.random_state)
 
             # Train model
 
-            # xgb = XGBClassifier(random_state=args.random_state, # After search on F1 with Oversampling 
+            # xgb = XGBClassifier(random_state=args.random_state, # After search on F1 
             #                     eval_metric='logloss', 
             #                     colsample_bytree=0.735947043008583, 
             #                     learning_rate=0.14668211285518798, 
@@ -478,7 +390,21 @@ def main():
             #                     reg_alpha=2.199357732253043,
             #                     n_jobs=-1)
             
-            xgb = XGBClassifier(random_state=args.random_state, # After search on Balanced Accuracy with Oversampling 
+            # xgb = XGBClassifier(random_state=args.random_state, # After search on Recall with Oversampling 
+            #                     eval_metric='logloss', 
+            #                     colsample_bytree=0.632652358518563, 
+            #                     learning_rate=0.4173529384069992, 
+            #                     max_depth=10, 
+            #                     min_child_weight=1,
+            #                     n_estimators=1582, 
+            #                     subsample=0.8185378164978062,
+            #                     gamma=0.09959293492092158,
+            #                     reg_lambda=14.762972853481687, 
+            #                     reg_alpha=1.599475328633792,
+            #                     n_jobs=-1,
+            #                     early_stopping_rounds=10)
+
+            xgb = XGBClassifier(random_state=args.random_state, # After search on Balanced Accuracy 
                                 eval_metric='logloss', 
                                 colsample_bytree=0.9295494044854866, 
                                 learning_rate=0.001942205773843994, 
@@ -486,34 +412,204 @@ def main():
                                 min_child_weight=5,
                                 n_estimators=3190, 
                                 subsample=0.631845978626705,
-                                gamma=0.5283302939558705,
+                                gamma=0.7283302939558705,
                                 reg_lambda=15.349380699483927, 
                                 reg_alpha=14.46196843183752,
                                 n_jobs=-1,
                                 early_stopping_rounds=10)
-
-            xgb.fit(current_X_train, 
-                    current_y_train, 
-                    sample_weight=current_sample_class_weights, 
-                    eval_set=[(current_X_test, current_y_test)],
+            
+            xgb.fit(X_train, 
+                    y_train, 
+                    sample_weight=sample_class_weights, 
+                    eval_set=[(X_test, y_test)], 
                     verbose=False)
-            current_y_pred_train = xgb.predict(current_X_train)
-            current_y_pred_test = xgb.predict(current_X_test)
+            y_pred_training = xgb.predict(X_train)
+            y_pred_test = xgb.predict(X_test)
 
-            # Evaluation
+            # Regular Evaluation
 
-            cross_validation_accuracies_train.append(accuracy_score(current_y_train, current_y_pred_train))
-            cross_validation_accuracies_test.append(accuracy_score(current_y_test, current_y_pred_test))
-            cross_validation_precisions.append(precision_score(current_y_test, current_y_pred_test))
-            cross_validation_recalls.append(recall_score(current_y_test, current_y_pred_test))
-            cross_validation_f1_scores.append(f1_score(current_y_test, current_y_pred_test))
-        
-        print(f"\nCross-Validation Evaluation over all {len(cross_validation_accuracies_test)} Folds:\n")
-        print(f"- Mean Accuracy on Training Set: {np.array(cross_validation_accuracies_train).mean()}")
-        print(f"- Mean Accuracy: {np.array(cross_validation_accuracies_test).mean()}")
-        print(f"- Mean Precision: {np.array(cross_validation_precisions).mean()}")
-        print(f"- Mean Recall: {np.array(cross_validation_recalls).mean()}")
-        print(f"- Mean F1 Score: {np.array(cross_validation_f1_scores).mean()}\n\n")
+            accuracy_training = accuracy_score(y_train, y_pred_training)
+            accuracy_test = accuracy_score(y_test, y_pred_test)
+            precision = precision_score(y_test, y_pred_test)
+            recall = recall_score(y_test, y_pred_test)
+            f1 = f1_score(y_test, y_pred_test)
+            cm = confusion_matrix(y_test, y_pred_test)
+
+            print(f"\nRegular Evaluation for Datasplit {ds_name}:\n")
+            print(f"- Accuracy on Training Set: {accuracy_training}")
+            print(f"- Accuracy: {accuracy_test}")
+            print(f"- Precision: {precision}")
+            print(f"- Recall: {recall}")
+            print(f"- F1 Score: {f1}")
+            print(f"- Confusion Matrix:\n{cm}\n\n")
+
+            ds_accuracies_training.append(accuracy_training)
+            ds_accuracies_test.append(accuracy_test)
+            ds_precisions.append(precision)
+            ds_recalls.append(recall)
+            ds_f1s.append(f1)
+
+        else: # Code for Cross-Validation Evaluation
+            X_train_x, X_test_x, y_train_x, y_test_x, current_categorical_cols = data_preparation_k_fold(ds,
+                                                                                                         n_folds=10)
+            
+            cross_validation_accuracies_train = []
+            cross_validation_accuracies_test = []
+            cross_validation_precisions = []
+            cross_validation_recalls = []
+            cross_validation_f1_scores = []
+            cm_over_folds = np.zeros((2, 2), dtype=int)
+
+            # Loop over all Cross-Validation Splits
+
+            for i in range(len(X_train_x)):
+                current_X_train = X_train_x[i]
+                current_X_test = X_test_x[i]
+                current_y_train = y_train_x[i]
+                current_y_test = y_test_x[i]
+
+                # Remove Features with a Very High Correlation
+
+                current_highly_correlated_features = identify_highly_correlated_features(current_X_train)
+
+                current_X_train = current_X_train.drop(columns=current_highly_correlated_features)
+                current_X_test = current_X_test.drop(columns=current_highly_correlated_features)
+
+                # Remove Feature with a Very Low Variance
+
+                current_low_variance_features = identify_low_variance_features(current_X_train, 
+                                                                               current_categorical_cols)
+
+                current_X_train = current_X_train.drop(columns=current_low_variance_features)
+                current_X_test = current_X_test.drop(columns=current_low_variance_features)
+
+                current_oversampler = SMOTE(random_state=args.random_state, 
+                                            sampling_strategy=1)
+                current_undersampler = RandomUnderSampler(random_state=args.random_state,
+                                                          sampling_strategy=1)
+                
+                # Code for Imbalance Handling: Oversample
+
+                if args.class_imbalance_handling == 'oversample':
+                    current_X_train, current_y_train = current_oversampler.fit_resample(current_X_train, 
+                                                                                        current_y_train)
+
+                # Code for Imbalance Handling: Undersample
+
+                if args.class_imbalance_handling == 'undersample':
+                    current_X_train, current_y_train = current_undersampler.fit_resample(current_X_train, 
+                                                                                         current_y_train)
+                
+                # Determine Sample Class Weights
+
+                current_sample_class_weights = compute_sample_weight(class_weight='balanced', 
+                                                                     y=current_y_train)
+
+                # Train model
+
+                # xgb = XGBClassifier(random_state=args.random_state, # After search on F1
+                #                     eval_metric='logloss', 
+                #                     colsample_bytree=0.735947043008583, 
+                #                     learning_rate=0.14668211285518798, 
+                #                     max_depth=9, 
+                #                     min_child_weight=7,
+                #                     n_estimators=1135, 
+                #                     subsample=0.8131090921418384,
+                #                     gamma=0.31199353789149753,
+                #                     reg_lambda=11.891452528606097, 
+                #                     reg_alpha=2.199357732253043,
+                #                     n_jobs=-1)
+                
+                # xgb = XGBClassifier(random_state=args.random_state, # After search on Recall
+                #                     eval_metric='logloss', 
+                #                     colsample_bytree=0.632652358518563, 
+                #                     learning_rate=0.4173529384069992, 
+                #                     max_depth=10, 
+                #                     min_child_weight=1,
+                #                     n_estimators=1582, 
+                #                     subsample=0.8185378164978062,
+                #                     gamma=0.09959293492092158,
+                #                     reg_lambda=14.762972853481687, 
+                #                     reg_alpha=1.599475328633792,
+                #                     n_jobs=-1,
+                #                     early_stopping_rounds=10)
+                
+                xgb = XGBClassifier(random_state=args.random_state, # After search on Balanced Accuracy 
+                                    eval_metric='logloss', 
+                                    colsample_bytree=0.9295494044854866, 
+                                    learning_rate=0.001942205773843994, 
+                                    max_depth=8, 
+                                    min_child_weight=5,
+                                    n_estimators=3190, 
+                                    subsample=0.631845978626705,
+                                    gamma=0.5283302939558705,
+                                    reg_lambda=15.349380699483927, 
+                                    reg_alpha=14.46196843183752,
+                                    n_jobs=-1,
+                                    early_stopping_rounds=10)
+
+                xgb.fit(current_X_train, 
+                        current_y_train, 
+                        sample_weight=current_sample_class_weights, 
+                        eval_set=[(current_X_test, current_y_test)],
+                        verbose=False)
+                current_y_pred_train = xgb.predict(current_X_train)
+                current_y_pred_test = xgb.predict(current_X_test)
+
+                # Single Split Evaluation
+
+                cross_validation_accuracies_train.append(accuracy_score(current_y_train, current_y_pred_train))
+                cross_validation_accuracies_test.append(accuracy_score(current_y_test, current_y_pred_test))
+                cross_validation_precisions.append(precision_score(current_y_test, current_y_pred_test))
+                cross_validation_recalls.append(recall_score(current_y_test, current_y_pred_test))
+                cross_validation_f1_scores.append(f1_score(current_y_test, current_y_pred_test))
+                cm_over_folds += confusion_matrix(current_y_test, current_y_pred_test)
+            
+            # Cross-Validation Evaluation
+            
+            print(f"\nCross-Validation Evaluation over all {len(cross_validation_accuracies_test)} Folds for Datasplit {ds_name}:\n")
+            print(f"- Mean Accuracy on Training Set: {np.array(cross_validation_accuracies_train).mean()}")
+            print(f"- Mean Accuracy: {np.array(cross_validation_accuracies_test).mean()}")
+            print(f"- Mean Precision: {np.array(cross_validation_precisions).mean()}")
+            print(f"- Mean Recall: {np.array(cross_validation_recalls).mean()}")
+            print(f"- Mean F1 Score: {np.array(cross_validation_f1_scores).mean()}")
+            print(f"- Confusion Matrix:\n{cm_over_folds}\n\n")
+
+            ds_accuracies_training.append(np.array(cross_validation_accuracies_train).mean())
+            ds_accuracies_test.append(np.array(cross_validation_accuracies_test).mean())
+            ds_precisions.append(np.array(cross_validation_precisions).mean())
+            ds_recalls.append(np.array(cross_validation_recalls).mean())
+            ds_f1s.append(np.array(cross_validation_f1_scores).mean())
+
+            # Save Confusion Matrix of Data Split to File
+
+            plt.figure(figsize=(8, 6))
+            sns.heatmap(cm_over_folds, annot=True, 
+                        fmt='d', 
+                        cmap='Blues', 
+                        xticklabels=['No Hit', 'Hit'], 
+                        yticklabels=['No Hit', 'Hit'])
+            plt.title(f"Confusion Matrix of XGBoost over All {len(cross_validation_accuracies_test)} Folds with {ds_name} Dataset")
+            plt.savefig(f"Confusion Matrices/XGB/Confusion_Matrix_{ds_name}.png")
+    
+    # Save Results to File
+    
+    if not args.cross_validation:
+        pd.DataFrame({"Data Split": data_splits.keys(), 
+                      "Training Accuracy": ds_accuracies_training,
+                      "Test Accuracy": ds_accuracies_test,
+                      "Precision": ds_precisions,
+                      "Recall": ds_recalls,
+                      "F1": ds_f1s}).to_csv(f"Regular Evaluation Results/XGB/Results_{args.run}.csv", 
+                                            index=False)
+    else:
+        pd.DataFrame({"Data Split": data_splits.keys(), 
+                      "Training Accuracy": ds_accuracies_training,
+                      "Test Accuracy": ds_accuracies_test,
+                      "Precision": ds_precisions,
+                      "Recall": ds_recalls,
+                      "F1": ds_f1s}).to_csv(f"10-Fold Cross-Validation Results/XGB/Results_{args.run}.csv", 
+                                            index=False)
 
 
 if __name__ == "__main__":

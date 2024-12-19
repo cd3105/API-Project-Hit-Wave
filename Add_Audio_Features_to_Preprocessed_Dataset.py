@@ -27,6 +27,8 @@ if len(features_df) != 0:
     filtered_songs_df_with_audio_features = songs_df_with_audio_features.sort_values(by="Hit", ascending=False).reset_index(drop=True)
     filtered_songs_df_with_audio_features = filtered_songs_df_with_audio_features.drop_duplicates(subset=["Spotify ID"]).reset_index(drop=True)
     filtered_songs_df_with_audio_features = filtered_songs_df_with_audio_features.drop_duplicates(subset=["Video Title of Audio"]).reset_index(drop=True)
+    filtered_songs_df_with_audio_features = filtered_songs_df_with_audio_features[filtered_songs_df_with_audio_features['Release Year'] >= 1958].reset_index(drop=True)
+    filtered_songs_df_with_audio_features = filtered_songs_df_with_audio_features.sample(frac=1, ignore_index=True)
 
     filtered_songs_df_with_audio_features.to_csv(f"Final Datasets after Filtering\Reordered_Preprocessed_Labeled_Songs_per_Hot_100_with_Spotify_Features_and_Audio_Features_{len(filtered_songs_df_with_audio_features)}.csv", 
                                                  index=False)
