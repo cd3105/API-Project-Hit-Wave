@@ -1,6 +1,8 @@
 import pandas as pd
 import numpy as np
 
+# Load in Data
+
 top_40_df = pd.read_csv("Datasets/Top_40_Dataset.csv", sep="\t", encoding='latin-1')
 top_100_billboard_df = pd.read_csv("Datasets/Top_100_Billboard.csv")
 million_spotify_df = pd.read_csv("Datasets/Million_Spotify_Dataset.csv")
@@ -27,6 +29,8 @@ new_million_spotify_df = pd.DataFrame({"Artist": unique_million_spotify_df["arti
 new_hot_100_df = pd.DataFrame({"Artist": unique_hot_100_df["Artist"], "Song Title": unique_hot_100_df["Song"].apply(lambda x: x.upper())})
 new_the_hot_100_df = pd.DataFrame({"Artist": unique_the_hot_100_df["artist"], "Song Title": unique_the_hot_100_df["song"].apply(lambda x: x.upper())})
 new_weekly_hot_100_df = pd.DataFrame({"Artist": unique_weekly_hot_100_df["Performer"], "Song Title": unique_weekly_hot_100_df["Song"].apply(lambda x: x.upper())})
+
+# Merge Data
 
 all_unique_songs = pd.concat([new_top_40_df, new_top_100_billboard_df, new_hot_100_df, new_the_hot_100_df, new_weekly_hot_100_df, new_million_spotify_df]).sort_values(by="Artist").drop_duplicates(subset=["Song Title"]).reset_index(drop=True)
 

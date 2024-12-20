@@ -1,5 +1,7 @@
 import pandas as pd
 
+# Load in Data
+
 df = pd.read_csv("Preprocessed and Labeled Datasets with Spotify Features\Labeled_Songs_per_Hot_100_with_Spotify_Features.csv")
 df_hits = df[df['Hit'] == 1]
 df_no_hits = df[df['Hit'] == 0]
@@ -14,6 +16,8 @@ print(f"Randomized DF with only hits (Length: {len(df_hits_randomized_order)}):\
 print(f"Randomized DF with no hits (Length: {len(df_no_hits_randomized_order)}):\n{df_no_hits_randomized_order}\n")
 
 df_w_new_order = pd.DataFrame(columns=df.columns)
+
+# Reorder Dataset
 
 for i in range(min(len(df_no_hits_randomized_order), len(df_hits_randomized_order))):
     df_w_new_order.loc[i*2] = df_hits_randomized_order.iloc[i]

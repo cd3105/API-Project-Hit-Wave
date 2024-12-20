@@ -8,12 +8,14 @@ from yt_dlp.utils import DownloadError
 from Feature_Extraction import Features
 from mutagen.mp3 import MP3
 
-def find_youtube_videos_of_song(query):
+
+def find_youtube_videos_of_song(query): # Function for querying Youtube and retrieving the results of the query
     yt_search = Search(query)
 
     return yt_search.results
 
-def extract_audio_of_song(youtube_url, title, path):
+
+def extract_audio_of_song(youtube_url, title, path): # Function to extract audio from YouTube
     ydl_opts_1 = {
         'format': 'bestaudio/best',
         'postprocessors': [{
@@ -32,7 +34,7 @@ def extract_audio_of_song(youtube_url, title, path):
             'preferredquality': '192',
         }],
         'outtmpl': path + title + '.%(ext)s',
-        'cookiefile': r'C:\Users\Gebruiker\Downloads\www.youtube.com_cookies.txt', # Path to Your Cookie.txt file containing your YouTube cookies
+        'cookiefile': r'"C:\Users\Gebruiker\Downloads\www.youtube.com_cookies.txt"', # Add Path to Your Cookie.txt file containing your YouTube cookies
     }
 
     try:
@@ -53,7 +55,8 @@ def extract_audio_of_song(youtube_url, title, path):
 
     return mp3_file, wav_file
 
-def extract_audios(s_idx, df, feat_df):
+
+def extract_audios(s_idx, df, feat_df): # Extract audio from all songs and extract corresponding audio features
     for i in range(s_idx, len(df)):
         artist = df.iloc[i]['Artist']
         song_title = df.iloc[i]['Song Title']
@@ -100,7 +103,8 @@ def extract_audios(s_idx, df, feat_df):
 
     return
 
-if not os.path.exists("Audio Features Datasets\Audio_Features_Dataset.csv"):
+
+if not os.path.exists("Audio Features Datasets\Audio_Features_Dataset.csv"): # Define audio features dataset
     pd.DataFrame(columns=['Video Title of Audio', 
                           'Duration', 
                           'Tempo', 

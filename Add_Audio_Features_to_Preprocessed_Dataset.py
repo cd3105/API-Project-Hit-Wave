@@ -2,7 +2,7 @@ import pandas as pd
 import unicodedata
 import re
 
-def preprocess_text(text):
+def preprocess_text(text): # Function for Pre-processing Titles / Artists
     text = text.lower()
     text = unicodedata.normalize('NFD', text)
     text = ''.join(c for c in text if unicodedata.category(c) != 'Mn')
@@ -10,8 +10,12 @@ def preprocess_text(text):
     text = re.sub(r'\s+', ' ', text).strip()
     return text
 
+# Load in Data
+
 songs_df = pd.read_csv("Reordered Preprocessed and Labeled Datasets with Spotify Features\Reordered_Labeled_Songs_per_Hot_100_with_Spotify_Features.csv")
 features_df = pd.read_csv("Audio Features Datasets\Audio_Features_Dataset.csv")
+
+# Add Audio Features to Song Dataset
 
 if len(features_df) != 0:
     if len(features_df) < len(songs_df):
